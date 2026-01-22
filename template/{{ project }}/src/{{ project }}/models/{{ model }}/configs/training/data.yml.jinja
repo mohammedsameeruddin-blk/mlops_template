@@ -8,7 +8,7 @@ actions:
   - name: data_extraction
     enable: true
     functions:
-      module_file_path: {{ project }}.common.data.data_loader:load_data
+      class_path: {{ project }}.common.data.data_loader:load_data
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}
@@ -26,4 +26,4 @@ actions:
           file:
             data:
             pipeline:
-          databricks_table: catalog.schema.table
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"

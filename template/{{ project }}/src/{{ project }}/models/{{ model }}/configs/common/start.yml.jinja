@@ -8,7 +8,7 @@ actions:
   - name: start_setup
     enable: true
     functions:
-      module_file_path: {{ project }}.common.utils.audit_utils:setup_project_audit_table
+      class_path: {{ project }}.common.utils.audit_utils:setup_project_audit_table
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}

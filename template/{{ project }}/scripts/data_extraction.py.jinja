@@ -14,6 +14,12 @@ from {{ project }}.common.utils.config_utils import (
 from {{ project }}.common.utils.audit_utils import write_to_audit_table
 
 
+def load_class(class_path: str):
+    module_path, class_name = class_path.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
+
 def log_params_with_prefix(params: dict, prefix: str):
     mlflow.log_params({
         f"{prefix}.{k}": v
@@ -63,7 +69,7 @@ def main(spark):
     task_config = load_task_config(
         project_name=project_name, model_name=model_name, stage_name=stage_name, env_context=env_context, which_file=yml_task
     )
-    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_{model_name}_audit_tbl"
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
     audit_table = task_config.get("audit_table", placeholder_audit_table)
     if audit_table.startswith("."):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
@@ -80,10 +86,7 @@ def main(spark):
         for aconf in actions_config:
             action_name = aconf["name"]
             func_conf = aconf["functions"]
-            module_file_path = func_conf["module_file_path"]
-            module_path, func_name = module_file_path.split(":")
-            module = importlib.import_module(module_path)
-            func = getattr(module, func_name)
+            cls = load_class(func_conf["class_path"])
             process_name = func_conf["kwargs"]["process_name"]
 
             logger.info(f"Starting action: {action_name}")
@@ -133,7 +136,7 @@ def main(spark):
                         log_params_with_prefix(params=target_info, prefix="target.file")
                     
                     # function call
-                    func(spark=spark, func_conf=func_conf)
+                    cls(spark=spark, func_conf=func_conf)
                     run_status = "SUCCESS"
 
                 except Exception as e:

@@ -20,10 +20,10 @@ actions:
           file:
             data:
             pipeline:
-          databricks_table: catalog.schema.table
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
         outputs:
           # currently supports file/databricks_table
           file:
-            data: /data/preprocessing/data.csv
+            data: /data/preprocessing/<data>.csv
             pipeline:
           databricks_table:

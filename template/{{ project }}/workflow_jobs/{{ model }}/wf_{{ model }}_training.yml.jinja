@@ -1,7 +1,7 @@
 resources:
   jobs:
-    deployment:
-      name: mlops__{{ model }}_training
+    training:
+      name: mlops_{{ model }}_training
       tags:
         project_name: "{{ project }}"
         model_name: "{{ model }}"

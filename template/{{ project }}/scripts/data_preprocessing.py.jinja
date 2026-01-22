@@ -79,7 +79,7 @@ def main(spark):
         env_context=env_context,
         which_file=yml_task,
     )
-    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_{model_name}_audit_tbl"
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
     audit_table = task_config.get("audit_table", placeholder_audit_table)
     if audit_table.startswith("."):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
@@ -159,10 +159,11 @@ def main(spark):
                     if target_type == "file":
                         # TODO: output should always be csv, but we can extend this later
                         base_output_dir = os.path.join(root_path, stage_name)
+                        base_output_dir = Path(base_output_dir)
                         file_output_dir = "/".join(target_info["data"].split("/")[:-1]).lstrip("/")
-                        output_path = Path(base_output_dir) / file_output_dir
+                        output_path = base_output_dir / file_output_dir
                         output_path.mkdir(parents=True, exist_ok=True)
-                        preprocess_path = Path(base_output_dir) / target_info["data"].lstrip("/")
+                        preprocess_path = base_output_dir / target_info["data"].lstrip("/")
                         logger.info(f"Writing output to {output_path}")
                         mlflow.log_param(key=f"target_file_path", value=preprocess_path)
                         output_df.to_csv(preprocess_path, index=False)

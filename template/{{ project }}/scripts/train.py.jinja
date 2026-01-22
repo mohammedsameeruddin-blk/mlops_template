@@ -68,7 +68,7 @@ def main(spark):
         env_context=env_context,
         which_file=yml_task,
     )
-    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_{model_name}_audit_tbl"
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
     audit_table = task_config.get("audit_table", placeholder_audit_table)
     if audit_table.startswith("."):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
@@ -91,10 +91,13 @@ def main(spark):
             cls = load_class(func_conf["class_path"])
 
             logger.info(f"Starting action: {action_name}")
+
+            start_time = datetime.now()
             run_status = ""
             error_details = ""
-            start_time = datetime.now()
+
             base_output_dir = os.path.join(root_path, stage_name)
+            base_output_dir = Path(base_output_dir)
 
             with mlflow.start_run(
                 run_name=action_name,
@@ -107,40 +110,45 @@ def main(spark):
                     if action_name == "train_test_split":
                         target_type = func_kwargs.get("target_data_type")
                         target_info = func_kwargs["outputs"]["file"]
+                        source_type = func_kwargs["source_data_type"]
                         result = cls(
-                            spark=spark, func_conf=func_conf, root_path=root_path, stage_name=stage_name
+                            spark=spark, func_conf=func_conf, source_type=source_type, root_path=root_path, stage_name=stage_name, experiment_id=experiment_id
                         )
-                        merged_df, train_df, test_df = result["merged"], result["train"], result["test"]
+                        merged_df, train_df, test_df, feature_params = result["merged"], result["train"], result["test"], result["params"]
+
+                        if feature_params:
+                            logger.debug(feature_params)
+                            mlflow.log_param(key="features_info", value=json.dumps(feature_params))
                     
                         if target_type == "file":
                             # TODO: output should always be csv, but we can extend this later
                             merged_output_dir = "/".join(target_info["merged"].split("/")[:-1]).lstrip("/")
-                            merged_output_path = Path(base_output_dir) / merged_output_dir
+                            merged_output_path = base_output_dir / merged_output_dir
                             merged_output_path.mkdir(parents=True, exist_ok=True)
-                            merged_data_path = Path(base_output_dir) / target_info["merged"].lstrip("/")
+                            merged_data_path = base_output_dir / target_info["merged"].lstrip("/")
                             logger.info(f"Writing merged data output to {merged_output_path}")
                             mlflow.log_param(key=f"target_merged_file_path", value=merged_data_path)
                             merged_df.to_csv(merged_data_path, index=False)
 
                             train_output_dir = "/".join(target_info["train"].split("/")[:-1]).lstrip("/")
-                            train_output_path = Path(base_output_dir) / train_output_dir
+                            train_output_path = base_output_dir / train_output_dir
                             train_output_path.mkdir(parents=True, exist_ok=True)
-                            train_data_path = Path(base_output_dir) / target_info["train"].lstrip("/")
+                            train_data_path = base_output_dir / target_info["train"].lstrip("/")
                             logger.info(f"Writing train data output to {train_output_path}")
                             mlflow.log_param(key=f"target_train_file_path", value=train_data_path)
                             train_df.to_csv(train_data_path, index=False)
 
                             test_output_dir = "/".join(target_info["test"].split("/")[:-1]).lstrip("/")
-                            test_output_path = Path(base_output_dir) / test_output_dir
+                            test_output_path = base_output_dir / test_output_dir
                             test_output_path.mkdir(parents=True, exist_ok=True)
-                            test_data_path = Path(base_output_dir) / target_info["test"].lstrip("/")
+                            test_data_path = base_output_dir / target_info["test"].lstrip("/")
                             logger.info(f"Writing test data output to {test_output_path}")
                             mlflow.log_param(key=f"target_test_file_path", value=test_data_path)
                             test_df.to_csv(test_data_path, index=False)
                     
                     if action_name == "hyperparameter_tuning":
                         source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = Path(base_output_dir) / source_info["train"]["data"].lstrip('/')
+                        train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
 
                         hyper_obj = cls(train_df=train_df)
@@ -166,8 +174,9 @@ def main(spark):
                                         mlflow.log_params(params=trial["params"])
                                         mlflow.log_metrics(metrics=trial["metrics"])
                                         mlflow.log_metric(key="loss", value=trial["loss"])
+                                        mlflow.set_tag(key="status", value=trial["status"])
                         
-                        tuning_results_path = Path(base_output_dir) / "hyperparameter_results.json"
+                        tuning_results_path = base_output_dir / "hyperparameter_results.json"
                         tuning_results_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(tuning_results_path, "w") as f:
                             json.dump(tuning_results, f, indent=2)
@@ -175,10 +184,10 @@ def main(spark):
                     
                     if action_name == "model_evaluation":
                         source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = Path(base_output_dir) / source_info["train"]["data"].lstrip('/')
+                        train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
                         # TODO: read from hyper results from experiment not from the bundle path
-                        tuning_results_path = Path(base_output_dir) / "hyperparameter_results.json"
+                        tuning_results_path = base_output_dir / "hyperparameter_results.json"
                         if not tuning_results_path.exists():
                             raise FileNotFoundError("Hyperparameter tuning results not found")
 
@@ -215,13 +224,14 @@ def main(spark):
                         mlflow.log_param(key="best_model", value=evaluation_results["best_model"])
                         mlflow.log_param(key="selection_metric", value=evaluation_results["selection_metric"])
                         mlflow.log_param(key="selection_value", value=evaluation_results["selection_value"])
+                        mlflow.set_tag(key="status", value="success")
                         
                         # log best_model_params artifact
                         best_model_name = evaluation_results["best_model"]
                         best_model_params = {
                             best_model_name: evaluation_results["models"][best_model_name]["best_params"]
                         }
-                        best_model_params_path = Path(base_output_dir) / "best_model_params.json"
+                        best_model_params_path = base_output_dir / "best_model_params.json"
                         best_model_params_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(best_model_params_path, "w") as f:
                             json.dump(best_model_params, f, indent=2)
@@ -229,12 +239,12 @@ def main(spark):
                 
                     if action_name == "model_training":
                         source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = Path(base_output_dir) / source_info["train"]["data"].lstrip('/')
-                        test_data_path = Path(base_output_dir) / source_info["test"]["data"].lstrip('/')
+                        train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
+                        test_data_path = base_output_dir / source_info["test"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
                         test_df = pd.read_csv(filepath_or_buffer=test_data_path, sep=",")
                         # TODO: read from best_model_params results from experiment not from the bundle path
-                        best_model_params_path = Path(base_output_dir) / "best_model_params.json"
+                        best_model_params_path = base_output_dir / "best_model_params.json"
                         if not best_model_params_path.exists():
                             raise FileNotFoundError("Best model results not found")
 
@@ -267,7 +277,7 @@ def main(spark):
                         ):
                             mlflow.log_metrics(model_results["metrics"]["test"])
                         
-                        artifacts_dir = Path(base_output_dir) / "model_artifacts"
+                        artifacts_dir = base_output_dir / "model_artifacts"
                         artifacts_dir.mkdir(parents=True, exist_ok=True)
                         # Log best params
                         params_path = artifacts_dir / "best_model_params.json"

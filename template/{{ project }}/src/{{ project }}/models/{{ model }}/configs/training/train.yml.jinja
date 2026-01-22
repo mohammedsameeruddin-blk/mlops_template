@@ -13,26 +13,41 @@ actions:
         project_name: {{ project }}
         model_name: {{ model }}
         process_name: {{ model }}_data_split
-        source_data_type: file
+        source_data_type: databricks_table
         target_data_type: file
         inputs:
           # currently supports file/databricks_table
           file:
+            # features:
+            #   # multiple feature data can be added
+            #   data1:
+            #     data: /data/featurization/data1.csv
+            #   data2:
+            #     data: /data/featurization/data2.csv
+            # merge:
+            #   how: inner # inner/outer/left/right
+            #   merge_on: <merge_key>
+            # split:
+            #   test_size: 0.2
+            #   random_state: 42
+            #   stratify: <target>
+            pipeline: 
+          databricks_table:
             features:
               # multiple feature data can be added
-              data1:
-                data: /data/featurization/data1.csv
-              data2:
-                data: /data/featurization/data2.csv
+              <data1>:
+                feature_run_name: <data1>_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
+              <data2>:
+                feature_run_name: <data2>_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
             merge:
-              how: inner # inner/outer/left/right
+              how: inner
               merge_on: <merge_key>
             split:
               test_size: 0.2
               random_state: 42
               stratify: <target>
-            pipeline: 
-          databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:

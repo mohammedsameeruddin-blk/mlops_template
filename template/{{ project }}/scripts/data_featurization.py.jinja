@@ -12,6 +12,7 @@ from loguru import logger
 from pyspark.sql import SparkSession
 from pyspark.dbutils import DBUtils
 
+from {{ project }}.common.utils.feature_utils import create_or_update_feature_data
 from {{ project }}.common.utils.config_utils import (
     load_project_config, 
     load_task_config
@@ -81,7 +82,7 @@ def main(spark):
         env_context=env_context,
         which_file=yml_task,
     )
-    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_{model_name}_audit_tbl"
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
     audit_table = task_config.get("audit_table", placeholder_audit_table)
     if audit_table.startswith("."):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
@@ -167,21 +168,36 @@ def main(spark):
                     if target_type == "file":
                         # TODO: output should always be csv, but we can extend this later
                         base_output_dir = os.path.join(root_path, stage_name)
+                        base_output_dir = Path(base_output_dir)
                         
                         file_output_dir = "/".join(target_info["data"].split("/")[:-1]).lstrip("/")
-                        output_path = Path(base_output_dir) / file_output_dir
+                        output_path = base_output_dir / file_output_dir
                         output_path.mkdir(parents=True, exist_ok=True)
-                        features_data_path = Path(base_output_dir) / target_info["data"].lstrip("/")
+                        features_data_path = base_output_dir / target_info["data"].lstrip("/")
                         logger.info(f"Writing data output to {output_path}")
                         mlflow.log_param(key=f"target_file_path", value=features_data_path)
                         output_df.to_csv(features_data_path, index=False)
 
+                        ## write as feature store
+                        spark_df = spark.createDataFrame(output_df)
+                        feature_info = func_kwargs["outputs"]["databricks_table"]
+                        full_table_name = feature_info["feature_store"]
+                        primary_key = feature_info["primary_key"]
+                        feature_store_table, feature_version = create_or_update_feature_data(
+                            spark=spark,
+                            full_table_name=full_table_name,
+                            primary_key=primary_key,
+                            spark_df=spark_df
+                        )
+                        mlflow.log_param(key="feature_version", value=feature_version)
+                        mlflow.log_param(key="feature_store_table", value=feature_store_table)
+
                         pipeline_output_dir = "/".join(
                             target_info["pipeline"].split("/")[:-1]
                         ).lstrip("/")
-                        pl_output_path = Path(base_output_dir) / pipeline_output_dir
+                        pl_output_path = base_output_dir / pipeline_output_dir
                         pl_output_path.mkdir(parents=True, exist_ok=True)
-                        pipeline_data_path = Path(base_output_dir) / target_info["pipeline"].lstrip("/")
+                        pipeline_data_path = base_output_dir / target_info["pipeline"].lstrip("/")
                         logger.info(f"Writing pipeline output to {pipeline_data_path}")
                         mlflow.log_param(key=f"target_pipeline_path", value=pipeline_data_path)
                         joblib.dump(feature_pipeline, pipeline_data_path)

@@ -1,0 +1,161 @@
+import os
+import pandas as pd
+
+from pathlib import Path
+from loguru import logger
+from sklearn.model_selection import train_test_split as sk_train_test_split
+
+from {{ project }}.common.utils.feature_utils import get_data_feature_version
+
+
+def split_feature_table_data(spark, config, experiment_id):
+    table_inputs = config["inputs"]["databricks_table"]
+
+    features_conf = table_inputs["features"]
+    merge_conf = table_inputs["merge"]
+    split_conf = table_inputs["split"]
+
+    merge_on = merge_conf["merge_on"]
+    merge_how = merge_conf.get("how", "inner")
+
+    test_size = split_conf.get("test_size", 0.2)
+    random_state = split_conf.get("random_state", None)
+    stratify_col = split_conf.get("stratify", None)
+
+    dfs = []
+    params = {}
+    for feature_name, feature_info in features_conf.items():
+        data_table = feature_info["feature_table"]
+        data_run_name = feature_info["feature_run_name"]
+        data_version = get_data_feature_version(experiment_id=experiment_id, run_name=data_run_name)
+        params[feature_name] = {"feature_table": data_table, "feature_version": data_version}
+        logger.info(f"Reading feature '{feature_name}' from {data_table}; verson {data_version}")
+        spark_df = spark.read.format("delta").option("versionAsOf", data_version).table(data_table)
+        df = spark_df.toPandas() # converting to pandas for compatability
+        dfs.append(df)
+    
+    if not dfs:
+        raise ValueError("No feature data provided for train-test split")
+    
+    # Merge the data
+    merged_df = dfs[0]
+    for df in dfs[1:]:
+        merged_df = merged_df.merge(
+            df,
+            how=merge_how,
+            on=merge_on,
+        )
+
+    logger.info(f"Merged dataframe shape: {merged_df.shape}")
+
+    # Split the data into train and test
+    stratify_values = None
+    if stratify_col:
+        if stratify_col not in merged_df.columns:
+            raise ValueError(
+                f"Stratify column '{stratify_col}' not found in merged data"
+            )
+        stratify_values = merged_df[stratify_col]
+
+    train_df, test_df = sk_train_test_split(
+        merged_df,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify_values,
+    )
+
+    logger.info(
+        f"Train shape: {train_df.shape}, Test shape: {test_df.shape}"
+    )
+
+    return {
+        "merged": merged_df,
+        "train": train_df,
+        "test": test_df,
+        "params": params
+    }
+
+
+def split_feature_file_data(spark, config, root_path, stage_name):
+    """
+    Merge multiple feature CSVs and perform train-test split.
+    Returns merged, train, and test DataFrames.
+    """
+
+    file_inputs = config["inputs"]["file"]
+
+    features_conf = file_inputs["features"]
+    merge_conf = file_inputs["merge"]
+    split_conf = file_inputs["split"]
+
+    merge_on = merge_conf["merge_on"]
+    merge_how = merge_conf.get("how", "inner")
+
+    test_size = split_conf.get("test_size", 0.2)
+    random_state = split_conf.get("random_state", None)
+    stratify_col = split_conf.get("stratify", None)
+
+    dfs = []
+    for feature_name, feature_info in features_conf.items():
+        data_path = Path(root_path) / stage_name / feature_info["data"].lstrip('/')
+        logger.info(f"Reading feature '{feature_name}' from {data_path}")
+        df = pd.read_csv(data_path)
+        dfs.append(df)
+
+    if not dfs:
+        raise ValueError("No feature data provided for train-test split")
+    
+    # Merge the data
+    merged_df = dfs[0]
+    for df in dfs[1:]:
+        merged_df = merged_df.merge(
+            df,
+            how=merge_how,
+            on=merge_on,
+        )
+
+    logger.info(f"Merged dataframe shape: {merged_df.shape}")
+
+    # Split the data into train and test
+    stratify_values = None
+    if stratify_col:
+        if stratify_col not in merged_df.columns:
+            raise ValueError(
+                f"Stratify column '{stratify_col}' not found in merged data"
+            )
+        stratify_values = merged_df[stratify_col]
+
+    train_df, test_df = sk_train_test_split(
+        merged_df,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify_values,
+    )
+
+    logger.info(
+        f"Train shape: {train_df.shape}, Test shape: {test_df.shape}"
+    )
+
+    return {
+        "merged": merged_df,
+        "train": train_df,
+        "test": test_df,
+        "params": {}
+    }
+
+
+def train_test_split(spark, func_conf, source_type, root_path=None, stage_name=None, experiment_id=None):
+    config = func_conf["kwargs"]
+    if source_type == "file":
+        return split_feature_file_data(
+            spark=spark,
+            config=config,
+            root_path=root_path,
+            stage_name=stage_name
+        )
+    elif source_type == "databricks_table": # signifies feature store
+        return split_feature_table_data(
+            spark=spark,
+            config=config,
+            experiment_id=experiment_id
+        )

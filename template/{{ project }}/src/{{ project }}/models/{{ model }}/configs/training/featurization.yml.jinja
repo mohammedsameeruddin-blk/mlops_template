@@ -18,12 +18,14 @@ actions:
         inputs:
           # currently supports file/databricks_table
           file:
-            data: /data/preprocessing/data.csv
+            data: /data/preprocessing/<data>.csv
             pipeline:
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
-            data: /data/featurization/data.csv
-            pipeline: /data/featurization/features.pkl
+            data: /data/featurization/<data>.csv
+            pipeline: /data/featurization/<features>.pkl
           databricks_table:
+            feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature_name>"
+            primary_key: "<primary_key>"
