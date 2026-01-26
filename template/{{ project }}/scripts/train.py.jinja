@@ -306,7 +306,8 @@ def main(spark):
                             sk_model=model_results["scaler"],
                             artifact_path="scaler"
                         )
-                
+                    
+                    run_status = "SUCCESS"
                 except Exception as e:
                     run_status = "FAILED"
                     error_details = str(e)
