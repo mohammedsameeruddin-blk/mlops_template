@@ -137,8 +137,8 @@ def main(spark):
                     
                     # function call
                     cls(spark=spark, func_conf=func_conf)
+                    
                     run_status = "SUCCESS"
-
                 except Exception as e:
                     run_status = "FAILED"
                     error_details = str(e)

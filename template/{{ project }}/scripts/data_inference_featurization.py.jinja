@@ -11,6 +11,7 @@ from pathlib import Path
 from loguru import logger
 from pyspark.sql import SparkSession
 from pyspark.dbutils import DBUtils
+from mlflow.tracking import MlflowClient
 
 from {{ project }}.common.utils.feature_utils import create_or_update_feature_data
 from {{ project }}.common.utils.config_utils import (
@@ -38,6 +39,32 @@ def log_params_with_prefix(params: dict, prefix: str):
         for k, v in params.items()
         if v is not None
     })
+
+
+def get_model_feature_pipeline(model_registry_name, pipeline_file, local_path):
+    client = MlflowClient()
+    
+    model_versions = client.search_model_versions(f"name='{model_registry_name}'")
+    latest_version = max(model_versions, key=lambda x: int(x.version))
+    
+    model_version = client.get_model_version(
+        name=model_registry_name,
+        version=f"{latest_version.version}"
+    )
+    run_id = model_version.run_id
+    
+    artifacts = client.list_artifacts(run_id=run_id, path="model/featurization")
+    for a in artifacts:
+        apath = a.path
+        file = apath.split('/')[-1]
+        if file == pipeline_file:
+            client.download_artifacts(
+                run_id=run_id,
+                path=apath,
+                dst_path=local_path
+            )
+            logger.info(f"Artifact saved in - `{local_path}`")
+            return local_path
 
 
 def main(spark):
@@ -82,12 +109,15 @@ def main(spark):
         env_context=env_context,
         which_file=yml_task,
     )
+
     placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
     audit_table = task_config.get("audit_table", placeholder_audit_table)
     if audit_table.startswith("."):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
         logger.info("Saving the audit details in `hive_metastore`.")
         audit_table = placeholder_audit_table
+    
+    model_registry_name = task_config["model_registry_name"]
 
     with mlflow.start_run(
         run_name="data_featurization",
@@ -155,15 +185,32 @@ def main(spark):
                         target_info = func_kwargs["outputs"]["file"]
                         log_params_with_prefix(params=target_info, prefix="target.file")
 
-                    # Prepare features for training
-                    feature_pipeline = cls()
-                    output_df = feature_pipeline.fit(df=df)
-
+                    # Prepare features for inference
                     if target_type == "file":
                         # TODO: output should always be csv, but we can extend this later
                         base_output_dir = os.path.join(root_path, stage_name)
                         base_output_dir = Path(base_output_dir)
-                        
+
+                        pipeline_output_dir = "/".join(
+                            target_info["pipeline"].split("/")[:-1]
+                        ).lstrip("/")
+                        pl_output_path = base_output_dir / pipeline_output_dir
+                        pl_output_path.mkdir(parents=True, exist_ok=True)
+                        get_model_feature_pipeline(
+                            model_registry_name=model_registry_name,
+                            pipeline_file=source_info["pipeline"],
+                            local_path=pl_output_path
+                        )
+                        # Load the features from pkl
+                        feature_pipeline_path = pl_output_path / source_info["pipeline"]
+                        feature_pipeline = joblib.load(feature_pipeline_path)
+                        # Transform the data
+                        output_df = feature_pipeline.transform(df=df)
+                        mlflow.log_param(key=f"target_pipeline_path", value=feature_pipeline_path)
+                        mlflow.log_artifact(
+                            local_path=feature_pipeline_path, artifact_path="featurization"
+                        )
+
                         file_output_dir = "/".join(target_info["data"].split("/")[:-1]).lstrip("/")
                         output_path = base_output_dir / file_output_dir
                         output_path.mkdir(parents=True, exist_ok=True)
@@ -185,20 +232,7 @@ def main(spark):
                         )
                         mlflow.log_param(key="feature_version", value=feature_version)
                         mlflow.log_param(key="feature_store_table", value=feature_store_table)
-
-                        pipeline_output_dir = "/".join(
-                            target_info["pipeline"].split("/")[:-1]
-                        ).lstrip("/")
-                        pl_output_path = base_output_dir / pipeline_output_dir
-                        pl_output_path.mkdir(parents=True, exist_ok=True)
-                        pipeline_data_path = base_output_dir / target_info["pipeline"].lstrip("/")
-                        logger.info(f"Writing pipeline output to {pipeline_data_path}")
-                        mlflow.log_param(key=f"target_pipeline_path", value=pipeline_data_path)
-                        joblib.dump(feature_pipeline, pipeline_data_path)
-                        mlflow.log_artifact(
-                            local_path=pipeline_data_path, artifact_path="featurization"
-                        )
-                    
+                
                     run_status = "SUCCESS"
                 except Exception as e:
                     run_status = "FAILED"

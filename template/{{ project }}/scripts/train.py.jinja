@@ -111,9 +111,10 @@ def main(spark):
                         target_type = func_kwargs.get("target_data_type")
                         target_info = func_kwargs["outputs"]["file"]
                         source_type = func_kwargs["source_data_type"]
-                        result = cls(
+                        data_ops = cls(
                             spark=spark, func_conf=func_conf, source_type=source_type, root_path=root_path, stage_name=stage_name, experiment_id=experiment_id
                         )
+                        result = data_ops.split_data()
                         merged_df, train_df, test_df, feature_params = result["merged"], result["train"], result["test"], result["params"]
 
                         if feature_params:
@@ -207,6 +208,8 @@ def main(spark):
                                 mlflow.log_params(params=result["best_params"])
                                 mlflow.log_metrics(metrics=result["mean_metrics"])
 
+                                mproblem_type = result["model_type"]
+
                                 # Log the trial-based metrics and params
                                 for fold in result["folds"]:
                                     with mlflow.start_run(
@@ -214,12 +217,20 @@ def main(spark):
                                         experiment_id=experiment_id,
                                         nested=True
                                     ):
-                                        mlflow.log_metrics(metrics={
-                                            "accuracy": fold["accuracy"],
-                                            "precision": fold["precision"],
-                                            "recall": fold["recall"],
-                                            "roc_auc": fold["roc_auc"],
-                                        })
+                                        if mproblem_type == "classification"
+                                            mlflow.log_metrics(metrics={
+                                                "accuracy": fold["accuracy"],
+                                                "precision": fold["precision"],
+                                                "recall": fold["recall"],
+                                                "roc_auc": fold["roc_auc"],
+                                            })
+                                        else:
+                                            mlflow.log_metrics(metrics={
+                                                "mae": fold["mae"],
+                                                "r2": fold["r2"],
+                                                "mse": fold["mse"],
+                                                "mape": fold["mape"],
+                                            })
                         
                         mlflow.log_param(key="best_model", value=evaluation_results["best_model"])
                         mlflow.log_param(key="selection_metric", value=evaluation_results["selection_metric"])
@@ -301,10 +312,31 @@ def main(spark):
                             signature=signature,
                             input_example=X_sample
                         )
-                        # Log scaler
-                        mlflow.sklearn.log_model(
-                            sk_model=model_results["scaler"],
-                            artifact_path="scaler"
+                        
+                        # Log scaler artifact
+                        scaler_path = artifacts_dir / "scaler.pkl"
+                        joblib.dump(model_results["scaler"], scaler_path)
+                        mlflow.log_artifact(
+                            local_path=scaler_path,
+                            artifact_path="model/scaler"
+                        )
+                        mlflow.log_param(key="scalar", value=scaler_path)
+
+                        # Log feature pipelines artifacts together
+                        feature_pipelines_logs = func_kwargs["feature_pipelines"]
+                        for tdata, pipeline in feature_pipelines_logs.items():
+                            pipeline_full_path = base_output_dir / pipeline["pipeline"].lstrip("/")
+                            mlflow.log_artifact(
+                                local_path=pipeline_full_path,
+                                artifact_path=f"model/featurization/"
+                            )
+                        
+                        # Log feature pipelines metadata
+                        mlflow.log_param(
+                            key="feature_pipelines",
+                            value=json.dumps({
+                                k: v["pipeline"] for k, v in feature_pipelines_logs.items()
+                            })
                         )
                     
                     run_status = "SUCCESS"

@@ -76,7 +76,6 @@ def main(spark):
             # assumes 'spark' is provided by Databricks environment
             result = cls(spark=spark, func_conf=func_conf)
             run_status = "SUCCESS"
-            error_details = ""
         except Exception as e:
             run_status = "FAILED"
             error_details = str(e)

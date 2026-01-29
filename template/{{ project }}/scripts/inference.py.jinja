@@ -1,0 +1,313 @@
+import argparse
+import importlib
+import mlflow
+import os
+import joblib
+import pandas as pd
+
+from datetime import datetime
+from pathlib import Path
+
+from loguru import logger
+from pyspark.sql import SparkSession
+from pyspark.dbutils import DBUtils
+from mlflow.tracking import MlflowClient
+
+from {{ project }}.common.utils.config_utils import (
+    load_project_config, 
+    load_task_config
+)
+from {{ project }}.common.utils.audit_utils import write_to_audit_table
+
+
+def log_params_with_prefix(params: dict, prefix: str):
+    mlflow.log_params({
+        f"{prefix}.{k}": v
+        for k, v in params.items()
+        if v is not None
+    })
+
+
+def load_class(class_path: str):
+    module_path, class_name = class_path.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
+
+def load_data_from_file(spark, file_path):
+    logger.info(f"Loading data from file: {file_path}")
+    df = pd.read_csv(file_path, sep=',')
+    return df
+
+
+def load_model(model_registry_name: str):
+    client = MlflowClient()
+    versions = client.search_model_versions(f"name='{model_registry_name}'")
+    
+    if not versions:
+        raise ValueError(f"No versions found for model {model_registry_name}")
+    
+    latest_version = max(int(v.version) for v in versions)
+    model_uri = f"models:/{model_registry_name}/{latest_version}"
+    logger.info(f"Loading model: {model_uri}")
+    
+    return mlflow.sklearn.load_model(model_uri)
+
+
+def get_scaler_pipeline(model_registry_name, pipeline_file, local_path):
+    client = MlflowClient()
+    
+    model_versions = client.search_model_versions(f"name='{model_registry_name}'")
+    latest_version = max(model_versions, key=lambda x: int(x.version))
+    
+    model_version = client.get_model_version(
+        name=model_registry_name,
+        version=f"{latest_version.version}"
+    )
+    run_id = model_version.run_id
+    
+    artifacts = client.list_artifacts(run_id=run_id, path="model/scaler")
+    for a in artifacts:
+        apath = a.path
+        file = apath.split('/')[-1]
+        if file == pipeline_file:
+            client.download_artifacts(
+                run_id=run_id,
+                path=apath,
+                dst_path=local_path
+            )
+            logger.info(f"Artifact saved in - `{local_path}`")
+            return local_path
+
+
+def main(spark):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--root_path", required=True)
+    parser.add_argument("--runtime_env", required=True)
+    parser.add_argument("--yml_task", required=True)
+    parser.add_argument("--project_name", required=True)
+    parser.add_argument("--model_name", required=True)
+    parser.add_argument("--stage_name", required=True)
+    parser.add_argument("--task_key", required=True)
+    parser.add_argument("--task_run_id", required=True)
+    parser.add_argument("--job_name", required=True)
+    parser.add_argument("--job_id", required=True)
+    parser.add_argument("--job_run_id", required=True)
+    parser.add_argument("--experiment_id", required=True)
+
+    args = parser.parse_args()
+    root_path = args.root_path
+    runtime_env = args.runtime_env.lower()
+    yml_task = args.yml_task
+    project_name = args.project_name
+    model_name = args.model_name
+    stage_name = args.stage_name
+    task_key = args.task_key
+    task_run_id = args.task_run_id
+    job_name = args.job_name
+    job_id = args.job_id
+    job_run_id = args.job_run_id
+    experiment_id = args.experiment_id
+
+    env_context = load_project_config(
+        project_name=project_name,
+        env_name=runtime_env,
+    )
+
+    task_config = load_task_config(
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
+    )
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
+    audit_table = task_config.get("audit_table", placeholder_audit_table)
+    if audit_table.startswith("."):
+        logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
+        logger.info("Saving the audit details in `hive_metastore`.")
+        audit_table = placeholder_audit_table
+    
+    with mlflow.start_run(
+        run_name="inference",
+        experiment_id=experiment_id,
+        nested=True
+    ):
+        actions_config = task_config.get("actions", [])
+        for action in actions_config:
+            if not action.get("enable", True):
+                continue
+        
+            action_name = action["name"]
+            func_conf = action["functions"]
+            process_name = func_conf["kwargs"]["process_name"]
+            cls = load_class(func_conf["class_path"])
+
+            logger.info(f"Starting action: {action_name}")
+
+            start_time = datetime.now()
+            run_status = ""
+            error_details = ""
+
+            base_output_dir = os.path.join(root_path, stage_name)
+            base_output_dir = Path(base_output_dir)
+
+            with mlflow.start_run(
+                run_name=action_name,
+                experiment_id=experiment_id,
+                nested=True
+            ):
+                
+                try:
+                    func_kwargs = func_conf["kwargs"]
+
+                    if action_name == "prepare_input_data":
+                        # Source logging
+                        source_type = func_kwargs.get("source_data_type")
+                        mlflow.log_param(
+                            key="source_data_type",
+                            value=source_type,
+                        )
+                        
+                        # Target logging
+                        target_type = func_kwargs.get("target_data_type")
+                        mlflow.log_param(
+                            key="target_data_type",
+                            value=target_type,
+                        )
+                        if target_type == "databricks_table":
+                            mlflow.log_param(
+                                key="target",
+                                value=target_table,
+                            )
+                        else:
+                            # file
+                            target_info = func_kwargs["outputs"]["file"]
+                            log_params_with_prefix(params=target_info, prefix="target.file")
+
+                            data_ops = cls(
+                                spark=spark, func_conf=func_conf, source_type=source_type, root_path=root_path, stage_name=stage_name, experiment_id=experiment_id
+                            )
+
+                        if source_type == "file":
+                            merged_df, feature_params, _ = data_ops.merge_feature_files()
+                        elif source_type == "databricks_table":
+                            merged_df, feature_params, _ = data_ops.merge_feature_tables()
+
+                        if target_type == "file":
+                            # TODO: output should always be csv, but we can extend this later
+                            file_output_dir = "/".join(target_info["data"].split("/")[:-1]).lstrip("/")
+                            output_path = base_output_dir / file_output_dir
+                            output_path.mkdir(parents=True, exist_ok=True)
+                            merge_data_path = base_output_dir / target_info["data"].lstrip("/")
+                            logger.info(f"Writing data output to {output_path}")
+                            mlflow.log_param(key=f"target_file_path", value=merge_data_path)
+                            merged_df.to_csv(merge_data_path, index=False)
+                        else:
+                            pass
+
+                        mlflow.log_params(params={
+                            "feature_details": feature_params
+                        })
+                    
+                    if action_name == "batch_prediction":
+                        model_registry_name = func_kwargs["model_registry_name"]
+
+                        # Source logging
+                        source_type = func_kwargs.get("source_data_type")
+                        mlflow.log_param(
+                            key="source_data_type",
+                            value=source_type,
+                        )
+                        
+                        # Target logging
+                        target_type = func_kwargs.get("target_data_type")
+                        target_table = func_kwargs["outputs"]["databricks_table"]
+                        mlflow.log_param(
+                            key="target_data_type",
+                            value=target_type,
+                        )
+                        if target_type == "databricks_table":
+                            mlflow.log_param(
+                                key="target",
+                                value=target_table,
+                            )
+                        else:
+                            # file
+                            target_info = func_kwargs["outputs"]["file"]
+                            log_params_with_prefix(params=target_info, prefix="target.file")
+                        
+                        # Download the scaler object
+                        pl_output_path = base_output_dir / "data"
+                        pl_output_path.mkdir(parents=True, exist_ok=True)
+                        source_info = func_kwargs["inputs"]["file"]
+                        get_scaler_pipeline(
+                            model_registry_name=model_registry_name,
+                            pipeline_file=source_info["pipeline"],
+                            local_path=pl_output_path
+                        )
+
+                        # Load the model and data
+                        model = load_model(model_registry_name=model_registry_name)
+                        input_file_path = base_output_dir / source_info["data"].lstrip("/")
+                        input_df = load_data_from_file(spark=spark, file_path=input_file_path)
+
+                        # Perform inference
+                        cls = load_class(class_path=func_conf["class_path"])
+                        scaler = joblib.load(filename=pl_output_path / "scaler.pkl")
+                        scorer = cls(input_df=input_df, model=model, scaler=scaler)
+                        result_df = scorer.run()
+                        spark_df = spark.createDataFrame(result_df)
+                        spark_df.write.format("delta") \
+                            .mode("overwrite") \
+                            .option("overwriteSchema", "true") \
+                            .saveAsTable(target_table)
+                        
+                        logger.info(f"Inference data is saved in - `{target_table}`")
+
+                    run_status = "SUCCESS"
+                except Exception as e:
+                    run_status = "FAILED"
+                    error_details = str(e)
+                    logger.error(f"Action failed: {action_name}")
+                    raise
+
+                finally:
+                    end_time = datetime.now()
+                    duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)
+
+                    mlflow.log_metric("duration_minutes", duration_minutes)
+                    mlflow.set_tag("run_status", run_status)
+
+                    audit_metrics = dict(
+                        project_name=project_name,
+                        model_name=model_name,
+                        stage_name=stage_name,
+                        task_name=task_key,
+                        process_name=process_name,
+                        task_run_id=task_run_id,
+                        job_name=job_name,
+                        job_id=job_id,
+                        job_run_id=job_run_id,
+                        run_status=run_status,
+                        start_time=str(start_time),
+                        end_time=str(end_time),
+                        duration_mins=str(duration_minutes),
+                        error_details=error_details
+                    )
+                    logger.info(
+                        f"Action {action_name} finished | Status={run_status} | Duration={duration_minutes} min"
+                    )
+                    write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
+    
+    logger.success("Model inferencing completed successfully.")
+    return experiment_id
+
+
+if __name__ == "__main__":
+    spark = SparkSession.builder.getOrCreate()
+    dbutils = DBUtils(spark)
+    
+    experiment_id = main(spark=spark)
+    dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
