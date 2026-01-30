@@ -1,0 +1,72 @@
+# change as per the requirement
+
+version: '1.0'
+stage: inference
+file: inference.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: prepare_input_data
+    enable: true
+    functions:
+      class_path: <mlops_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        model_name: {{ model }}
+        process_name: {{ model }}_data_preparation
+        source_data_type: databricks_table
+        target_data_type: file
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            # features:
+            #   # multiple feature data can be added
+            #   data1:
+            #     data: /data/featurization/data1.csv
+            #   data2:
+            #     data: /data/featurization/data2.csv
+            # merge:
+            #   how: inner # inner/outer/left/right
+            #   merge_on: <merge_key>
+            pipeline:
+          databricks_table:
+            features:
+              # multiple feature data can be added
+              data1:
+                feature_run_name: data1_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature1>"
+              data2:
+                feature_run_name: data2_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature2>"
+            merge:
+              how: inner # inner/outer/left/right
+              merge_on: <merge_key>
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/input_preparation/merged_input.csv
+            pipeline:
+          databricks_table:
+  
+  - name: batch_prediction
+    enable: true
+    functions:
+      class_path: <data_science_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        model_name: {{ model }}
+        process_name: {{ model }}_data_split
+        source_data_type: file
+        target_data_type: databricks_table
+        model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/input_preparation/merged_input.csv
+            pipeline: <scaler.pkl> # refers to the pkl file that was saved during training
+          databricks_table:
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"

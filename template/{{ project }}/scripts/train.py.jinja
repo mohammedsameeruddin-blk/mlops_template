@@ -217,7 +217,7 @@ def main(spark):
                                         experiment_id=experiment_id,
                                         nested=True
                                     ):
-                                        if mproblem_type == "classification"
+                                        if mproblem_type == "classification":
                                             mlflow.log_metrics(metrics={
                                                 "accuracy": fold["accuracy"],
                                                 "precision": fold["precision"],

@@ -1,0 +1,32 @@
+# change as per the requirement
+
+version: '1.0'
+stage: inference
+file: featurization.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+actions:
+  - name: data_featurization
+    enable: true
+    functions:
+      class_path: <data_science_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        model_name: {{ model }}
+        process_name: {{ model }}_featurization
+        source_data_type: file
+        target_data_type: file
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/preprocessing/<data>.csv
+            pipeline: <featurization.pkl> # refers to the pkl file that was saved during training
+          databricks_table:
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/featurization/<data>.csv
+            pipeline: /data/featurization/<features>.pkl
+          databricks_table:
+            feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature_name>"
+            primary_key: "<primary_key>"

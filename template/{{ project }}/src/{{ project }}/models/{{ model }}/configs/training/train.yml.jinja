@@ -8,7 +8,7 @@ actions:
   - name: train_test_split
     enable: true
     functions:
-      class_path: <data_science_module_file_path>
+      class_path: <mlops_module_file_path>
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}
@@ -31,7 +31,7 @@ actions:
             #   test_size: 0.2
             #   random_state: 42
             #   stratify: <target>
-            pipeline: 
+            pipeline:
           databricks_table:
             features:
               # multiple feature data can be added
