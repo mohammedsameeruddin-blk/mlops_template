@@ -7,7 +7,7 @@ from pyspark.dbutils import DBUtils
 
 from loguru import logger
 
-from {{ project }}.common.config_utils import (
+from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config
 )
@@ -63,6 +63,7 @@ def main(spark):
     actions_config = task_config.get("actions", [])
 
     for aconf in actions_config:
+        action_name = aconf["name"]
         func_conf = aconf["functions"]
         cls = load_class(func_conf["class_path"])
 

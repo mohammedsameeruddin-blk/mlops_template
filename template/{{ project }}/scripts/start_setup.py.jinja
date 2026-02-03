@@ -45,7 +45,7 @@ def set_mlflow_experiment(
     return experiment_id
 
 
-def main():
+def main(spark):
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--root_path", required=True)
@@ -95,6 +95,7 @@ def main():
     )
 
     for aconf in actions_config:
+        action_name = aconf["name"]
         func_conf = aconf["functions"]
         cls = load_class(func_conf["class_path"])
 
