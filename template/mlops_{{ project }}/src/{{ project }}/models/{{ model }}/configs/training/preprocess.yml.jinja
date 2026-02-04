@@ -5,14 +5,14 @@ stage: training
 file: preprocess.yml # same as current filename; do not change this
 audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
 actions:
-  - name: data_preprocessing
+  - name: {{ dataset_keyword }}_preprocessing
     enable: true
     functions:
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}
-        process_name: {{ model }}_preprocess
+        process_name: {{ dataset_keyword }}_preprocess
         source_data_type: databricks_table
         target_data_type: file
         inputs:
@@ -20,10 +20,10 @@ actions:
           file:
             data:
             pipeline:
-          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
         outputs:
           # currently supports file/databricks_table
           file:
-            data: /data/preprocessing/<data>.csv
+            data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:

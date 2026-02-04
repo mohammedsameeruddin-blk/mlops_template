@@ -8,7 +8,7 @@ actions:
   - name: train_test_split
     enable: true
     functions:
-      class_path: <mlops_module_file_path>
+      class_path: {{ project }}.common.data.data_splitter:DataOperations
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}
@@ -20,10 +20,8 @@ actions:
           file:
             # features:
             #   # multiple feature data can be added
-            #   data1:
-            #     data: /data/featurization/data1.csv
-            #   data2:
-            #     data: /data/featurization/data2.csv
+            #   {{ dataset_keyword }}:
+            #     data: /data/featurization/{{ dataset_keyword }}.csv
             # merge:
             #   how: inner # inner/outer/left/right
             #   merge_on: <merge_key>
@@ -35,12 +33,9 @@ actions:
           databricks_table:
             features:
               # multiple feature data can be added
-              <data1>:
-                feature_run_name: <data1>_featurization
-                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
-              <data2>:
-                feature_run_name: <data2>_featurization
-                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
+              {{ dataset_keyword }}:
+                feature_run_name: {{ dataset_keyword }}_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
             merge:
               how: inner
               merge_on: <merge_key>
@@ -106,10 +101,9 @@ actions:
         source_data_type: file
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
         feature_pipelines:
-          data1:
-            pipeline: /data/featurization/<data1>_features.pkl
-          data2:
-            pipeline: /data/featurization/<data2>_features.pkl
+          # multiple feature pipelines can be added
+          {{ dataset_keyword }}:
+            pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
         inputs:
           # currently supports file/databricks_table
           file:

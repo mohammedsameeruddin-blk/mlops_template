@@ -35,6 +35,15 @@ model:
     model must contain letters, numbers, dashes and underscores.
     {% endif %}
 
+# Ask every time to create a new dataset keyword for preprocessing and featurization
+dataset_keyword:
+  type: str
+  help: "Your dataset keyword (e.g., customer_transactions)"
+  validator: >-
+    {% if not dataset_keyword or dataset_keyword | regex_search('[^a-zA-Z0-9_-]') %}
+    dataset_keyword must contain letters, numbers, dashes and underscores.
+    {% endif %}
+
 author_email:
   type: str
   help: "Your email address"

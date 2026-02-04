@@ -20,10 +20,8 @@ actions:
           file:
             # features:
             #   # multiple feature data can be added
-            #   data1:
-            #     data: /data/featurization/data1.csv
-            #   data2:
-            #     data: /data/featurization/data2.csv
+            #   {{ dataset_keyword }}_features:
+            #     data: /data/featurization/{{ dataset_keyword }}.csv
             # merge:
             #   how: inner # inner/outer/left/right
             #   merge_on: <merge_key>
@@ -31,12 +29,9 @@ actions:
           databricks_table:
             features:
               # multiple feature data can be added
-              data1:
-                feature_run_name: data1_featurization
-                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature1>"
-              data2:
-                feature_run_name: data2_featurization
-                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<feature2>"
+              {{ dataset_keyword }}:
+                feature_run_name: {{ dataset_keyword }}_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
             merge:
               how: inner # inner/outer/left/right
               merge_on: <merge_key>
@@ -62,11 +57,11 @@ actions:
           # currently supports file/databricks_table
           file:
             data: /data/input_preparation/merged_input.csv
-            pipeline: <scaler.pkl> # refers to the pkl file that was saved during training
+            pipeline: scaler.pkl # refers to the pkl file that was saved during training
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
-          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"

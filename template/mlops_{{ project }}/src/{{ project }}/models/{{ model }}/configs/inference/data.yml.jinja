@@ -5,14 +5,14 @@ stage: inference
 file: data.yml # same as current filename; do not change this
 audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
 actions:
-  - name: data_extraction
+  - name: {{ dataset_keyword }}_extraction
     enable: true
     functions:
       class_path: {{ project }}.common.data.data_loader:load_data
       kwargs:
         project_name: {{ project }}
         model_name: {{ model }}
-        process_name: {{ model }}_data
+        process_name: {{ dataset_keyword }}_data
         source_data_type: databricks_table
         target_data_type: databricks_table
         inputs:
@@ -26,4 +26,4 @@ actions:
           file:
             data:
             pipeline:
-          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<table>"
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"
