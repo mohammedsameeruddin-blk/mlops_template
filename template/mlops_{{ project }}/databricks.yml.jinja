@@ -48,7 +48,7 @@ targets:
     default: true
     workspace:
       host: {{ dev_host }}
-      root_path: /Workspace/Users/{{ user_email }}/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/{{ author_email }}/.bundle/${bundle.name}/${bundle.target}
     variables:
       run_time_env: dev
 
@@ -57,7 +57,7 @@ targets:
     default: false
     workspace:
       host: {{ qa_host if qa_host else dev_host }}
-      root_path: /Workspace/Users/{{ user_email }}/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/{{ author_email }}/.bundle/${bundle.name}/${bundle.target}
     variables:
       run_time_env: qa
 
@@ -66,6 +66,6 @@ targets:
     default: false
     workspace:
       host: {{ prod_host if prod_host else dev_host }}
-      root_path: /Workspace/Users/{{ user_email }}/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/{{ author_email }}/.bundle/${bundle.name}/${bundle.target}
     variables:
       run_time_env: prod

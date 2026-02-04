@@ -1,53 +1,71 @@
-# Answers file (must be at the very top)
-_answers_file: ".copier-answers.yml"
-
 _min_copier_version: '9'
 _templates_suffix: .jinja
 _subdirectory: template
 _overwrite: true
+_update: true
+_envops:
+  autoescape: false
+  keep_trailing_newline: true
+  trim_blocks: true
+  lstrip_blocks: true
 
-_repo: "https://github.com/i-aj-ay/mlops_template"
+_repo: "https://github.com/mohammedsameeruddin-blk/mlops_template"
 _revision: feature/project_template
+
+_message_before_copy: |
+  Thanks for using our MLOps template to bootstrap your new project.
+
+  Please, reply to the question carefully as the answers will be used to configure the scaffold of your project.
 
 # Project info
 project:
   type: str
-  help: "Enter data science project name (e.g., blk-customer)"
+  help: "Your project name (e.g., customer_churn_prediction)"
+  validator: >-
+    {% if not project or project | regex_search('[^a-zA-Z0-9_-]') %}
+    project must contain letters, numbers, dashes and underscores.
+    {% endif %}
 
 # Ask every time to create a new model onboarding pipeline
 model:
   type: str
-  help: "Enter new model name (e.g., customer)"
+  help: "Your model name (e.g., customer)"
+  validator: >-
+    {% if not model or model | regex_search('[^a-zA-Z0-9_-]') %}
+    model must contain letters, numbers, dashes and underscores.
+    {% endif %}
 
-user_email:
+author_email:
   type: str
-  help: "Enter user_email (e.g., you@example.com)"
+  help: "Your email address"
+  validator: >-
+    {% if not (author_email | regex_search('([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+'))
+    %}
+    author_email is not a valid email address.
+    {% endif %}
 
 dev_host:
   type: str
-  help: "Please provide the databricks `DEV` host."
+  help: "Databricks `DEV` host."
+  validator: >-
+    {% if not dev_host %}
+    dev_host is required.
+    {% endif %}
 
 qa_host:
   type: str
-  help: "Please provide the databricks `QA` host."
-  default: ""
+  help: "Databricks `QA` host."
+  default: "{{ dev_host }}"
 
 prod_host:
   type: str
-  help: "Please provide the databricks `PROD` host."
-  default: ""
-
-# Force overwrite these files to merge pipelines
-_force:
-  - src/{{ model }}/**
-  - workflow_jobs/{{ model }}/wf_{{ model }}_inference.yml
-  - workflow_jobs/{{ model }}/wf_{{ model }}_retraining.yml
-  - workflow_jobs/{{ model }}/wf_{{ model }}_training.yml
+  help: "Databricks `PROD` host."
+  default: "{{ dev_host }}"
 
 _skip_if_exists:
   - databricks.yml
   - MANIFEST.in
   - pyproject.toml
 
-overwrite: true
-update: true
+_message_after_copy: |
+  Congratulations! Your project has been successfully created!
