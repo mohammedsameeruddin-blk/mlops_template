@@ -20,7 +20,7 @@ _message_before_copy: |
 # Project info
 project:
   type: str
-  help: "Your project name (e.g., customer_churn_prediction)"
+  help: "Your project name (without prefixes like mlops_, mlops-, etc)"
   validator: >-
     {% if not project or project | regex_search('[^a-zA-Z0-9_-]') %}
     project must contain letters, numbers, dashes and underscores.
@@ -46,7 +46,7 @@ author_email:
 
 dev_host:
   type: str
-  help: "Databricks `DEV` host."
+  help: "Databricks `DEV` host"
   validator: >-
     {% if not dev_host %}
     dev_host is required.
@@ -54,12 +54,12 @@ dev_host:
 
 qa_host:
   type: str
-  help: "Databricks `QA` host."
+  help: "Databricks `QA` host"
   default: "{{ dev_host }}"
 
 prod_host:
   type: str
-  help: "Databricks `PROD` host."
+  help: "Databricks `PROD` host"
   default: "{{ dev_host }}"
 
 _skip_if_exists:
