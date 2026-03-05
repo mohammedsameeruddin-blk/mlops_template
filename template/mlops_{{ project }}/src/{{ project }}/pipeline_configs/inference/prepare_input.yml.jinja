@@ -33,7 +33,7 @@ actions:
                 feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
             merge:
               how: inner # inner/outer/left/right
-              merge_on: <merge_key>
+              merge_on: <merge_key> # change as per the requirement; currently supports only one merge key
         outputs:
           # currently supports file/databricks_table
           file:
