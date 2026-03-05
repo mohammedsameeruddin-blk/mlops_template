@@ -10,14 +10,14 @@ resources:
           spec:
             client: "3"
             dependencies:
-              - "../../${var.data_science_project_library}"
-              - "../../${var.mlops_project_library}"
+              - "../${var.data_science_project_library}"
+              - "../${var.mlops_project_library}"
       
       tasks:
         - task_key: start_setup
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/start_setup.py"
+            python_file: "../scripts/start_setup.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -47,7 +47,7 @@ resources:
             - task_key: start_setup
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/data_extraction.py"
+            python_file: "../scripts/data_extraction.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -79,7 +79,7 @@ resources:
             - task_key: extract_data
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/data_preprocessing.py"
+            python_file: "../scripts/data_preprocessing.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -111,7 +111,7 @@ resources:
             - task_key: preprocess_data
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/data_inference_featurization.py"
+            python_file: "../scripts/data_inference_featurization.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -175,7 +175,7 @@ resources:
             - task_key: prepare_input
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/inference.py"
+            python_file: "../scripts/inference.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -207,7 +207,7 @@ resources:
             - task_key: {{ model }}_inference
           environment_key: default
           spark_python_task:
-            python_file: "../../scripts/end_setup.py"
+            python_file: "../scripts/end_setup.py"
             parameters:
               - "--root_path"
               - ${workspace.root_path}
@@ -218,7 +218,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ none }}"
+              - "none"
               - --stage_name
               - "inference"
               - --task_key
