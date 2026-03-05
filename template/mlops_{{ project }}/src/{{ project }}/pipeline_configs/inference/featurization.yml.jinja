@@ -14,6 +14,7 @@ actions:
         process_name: {{ dataset_keyword }}_features
         source_data_type: file
         target_data_type: file
+        experiment_details: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.experiment_tracking"
         inputs:
           # currently supports file/databricks_table
           file:

@@ -41,6 +41,17 @@ def log_params_with_prefix(params: dict, prefix: str):
     })
 
 
+def get_experiment_details(spark, experiments_table):
+    latest_row = (
+        spark.table(experiments_table)
+        .orderBy("insert_update_timestamp", ascending=False)
+        .limit(1)
+        .collect()
+    )
+    latest_experiment_id = latest_row[0]["experiment_id"]
+    return latest_experiment_id
+
+
 def get_training_feature_pipeline(experiment_id, pipeline_file, local_path):
     client = MlflowClient()
 
@@ -217,8 +228,12 @@ def main(spark):
                         ).lstrip("/")
                         pl_output_path = base_output_dir / pipeline_output_dir
                         pl_output_path.mkdir(parents=True, exist_ok=True)
+                        training_experiment_id = get_experiment_details(
+                            spark,
+                            experiments_table=func_kwargs["experiment_details"]
+                        )
                         get_training_feature_pipeline(
-                            experiment_id=experiment_id,
+                            experiment_id=training_experiment_id,
                             pipeline_file=source_info["pipeline"],
                             local_path=pl_output_path
                         )

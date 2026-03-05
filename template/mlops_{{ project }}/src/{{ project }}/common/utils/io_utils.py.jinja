@@ -1,8 +1,10 @@
 import os
 import shutil
 import json
+import mlflow
 import pandas as pd
 
+from datetime import datetime
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -97,3 +99,34 @@ def cleanup_pipeline_setup(spark, func_conf):
         return True
     
     logger.warning("No volumes path provided.")
+
+
+def log_experiment_details(spark, experiment_id, model_name, stage_name, func_conf):
+    # Get experiment name from id
+    experiment = mlflow.get_experiment(experiment_id)
+    experiment_name = experiment.name
+
+    table_name = func_conf["kwargs"]["outputs"]["databricks_table"]
+
+    insert_update_timestamp = datetime.now().isoformat()
+
+    df = spark.createDataFrame(
+        [
+            (
+                experiment_id,
+                experiment_name,
+                model_name,
+                stage_name,
+                insert_update_timestamp
+            )
+        ],
+        ["experiment_id", "experiment_name", "model_name", "stage_name", "insert_update_timestamp"]
+    )
+
+    (
+        df.write
+        .format("delta")
+        .mode("append")
+        .saveAsTable(table_name)
+    )
+    logger.info(f"Logged experiment details to {table_name} successfully.")

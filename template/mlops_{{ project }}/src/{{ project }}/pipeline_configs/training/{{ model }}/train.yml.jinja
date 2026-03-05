@@ -63,3 +63,14 @@ actions:
               data: /data/training/test.csv
             pipeline:
           databricks_table:
+  
+  - name: log_experiment_details
+    enable: true
+    functions:
+      class_path: {{ project }}.common.utils.io_utils:log_experiment_details
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_logging
+        outputs:
+          # currently supports databricks_table
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.experiment_tracking"
