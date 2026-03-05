@@ -16,23 +16,22 @@ from loguru import logger
 
 def setup_project_output_path(spark, func_conf):
     project_name = func_conf["kwargs"]["project_name"]
-    model_name = func_conf["kwargs"]["model_name"]
     volumes_root_path = func_conf["kwargs"].get("volumes_root_path")
 
     if volumes_root_path:
-        folder_name = os.path.join(project_name, f"{model_name}_outputs")
+        folder_name = os.path.join(project_name, f"{project_name}_outputs")
         project_output_path = os.path.join(volumes_root_path, folder_name)
 
         if os.path.exists(project_output_path):
             logger.warning(
-                f"{model_name} project output path already exists. Recreating it after cleaning up."
+                f"{project_name} project output path already exists. Recreating it after cleaning up."
             )
             shutil.rmtree(project_output_path)
             logger.info(f"Successfully deleted the {project_output_path}.")
 
         os.makedirs(project_output_path, exist_ok=True)
         logger.success(
-            f"Successfully created {model_name} project output path in volumes."
+            f"Successfully created {project_name} project output path in volumes."
         )
 
         return True
@@ -42,11 +41,10 @@ def setup_project_output_path(spark, func_conf):
 
 def cleanup_pipeline_setup(spark, func_conf):
     project_name = func_conf["kwargs"]["project_name"]
-    model_name = func_conf["kwargs"]["model_name"]
     volumes_root_path = func_conf["kwargs"].get("volumes_root_path", None)
 
     if volumes_root_path:
-        folder_name = os.path.join(project_name, f"{model_name}_outputs")
+        folder_name = os.path.join(project_name, f"{project_name}_outputs")
         project_output_path = os.path.join(volumes_root_path, folder_name)
 
         records = []
