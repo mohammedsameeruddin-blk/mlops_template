@@ -3,7 +3,7 @@
 version: '1.0'
 stage: training
 file: splitter.yml # same as current filename; do not change this
-audit_table: "{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}"
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
 actions:
   - name: train_test_split
     enable: true
