@@ -76,7 +76,7 @@ def main(spark):
         audit_table = placeholder_audit_table
 
     with mlflow.start_run(
-        run_name="training",
+        run_name=f"{model_name}_training" if model_name != "none" else f"training",
         experiment_id=experiment_id,
         nested=True
     ):
@@ -298,7 +298,7 @@ def main(spark):
                         # Log and register best model
                         X_sample = model_results["input_example"]
                         if model_results["model_type"] == "classification":
-                            y_sample = model_results["model"].predict_proba(X_sample)[:, 1]
+                            y_sample = model_results["model"].predict(X_sample)
                         else:
                             y_sample = model_results["model"].predict(X_sample)
                         signature = infer_signature(
@@ -374,7 +374,7 @@ def main(spark):
                     )
                     write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
 
-    logger.success("Model training completed successfully.")
+    logger.success("Data splitting/Model training completed successfully.")
     return experiment_id
 
 

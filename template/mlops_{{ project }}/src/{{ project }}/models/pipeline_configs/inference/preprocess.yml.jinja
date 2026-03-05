@@ -2,28 +2,27 @@
 
 version: '1.0'
 stage: inference
-file: data.yml # same as current filename; do not change this
+file: preprocess.yml # same as current filename; do not change this
 audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
 actions:
-  - name: {{ dataset_keyword }}_extraction
+  - name: {{ dataset_keyword }}_preprocessing
     enable: true
     functions:
-      class_path: {{ project }}.common.data.data_loader:load_data
+      class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
-        model_name: {{ model }}
-        process_name: {{ dataset_keyword }}_data
+        process_name: {{ dataset_keyword }}_preprocess
         source_data_type: databricks_table
-        target_data_type: databricks_table
+        target_data_type: file
         inputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
-          databricks_table: <catalog.schema.table>
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"
         outputs:
           # currently supports file/databricks_table
           file:
-            data:
+            data: /data/preprocessing/{{ dataset_keyword }}_incoming.csv
             pipeline:
-          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"
+          databricks_table:

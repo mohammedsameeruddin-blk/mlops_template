@@ -130,7 +130,7 @@ def main(spark):
         audit_table = placeholder_audit_table
     
     with mlflow.start_run(
-        run_name="inference",
+        run_name=f"{model_name}_inference" if model_name != "none" else f"inference",
         experiment_id=experiment_id,
         nested=True
     ):
@@ -301,7 +301,7 @@ def main(spark):
                     )
                     write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
     
-    logger.success("Model inferencing completed successfully.")
+    logger.success("Input data preparation/Model inferencing completed successfully.")
     return experiment_id
 
 

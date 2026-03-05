@@ -10,6 +10,4 @@ actions:
       class_path: {{ project }}.common.utils.io_utils:cleanup_pipeline_setup
       kwargs:
         project_name: {{ project }}
-        model_name: {{ model }}
-        process_name: {{ model }}_end_setup
         volumes_root_path: "{% raw %}{{ env.VOLUMES_ROOT_PATH }}{% endraw %}" # change this as per the need

@@ -17,10 +17,10 @@ _message_before_copy: |
 
   Please, reply to the question carefully as the answers will be used to configure the scaffold of your project.
 
-# Project info
+# MLOps project info
 project:
   type: str
-  help: "Your project name (without prefixes like mlops_, mlops-, etc)"
+  help: "Your MLOps project name (without prefixes like mlops_, mlops-, etc)"
   validator: >-
     {% if not project or project | regex_search('[^a-zA-Z0-9_-]') %}
     project must contain letters, numbers, dashes and underscores.
@@ -70,6 +70,19 @@ prod_host:
   type: str
   help: "Databricks `PROD` host"
   default: "{{ dev_host }}"
+
+# DS project info
+ds_project:
+  type: str
+  help: "Your DS project name (without prefixes like ds_, ds-, etc)"
+  description: >-
+    This will be used as a package dependency in pyproject.toml and should
+    match the name of the package you have published or will publish to your
+    artifact repository.
+  validator: >-
+    {% if not ds_project or ds_project | regex_search('[^a-zA-Z0-9_-]') %}
+    ds_project must contain letters, numbers, dashes and underscores.
+    {% endif %}
 
 _skip_if_exists:
   - databricks.yml

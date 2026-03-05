@@ -23,7 +23,7 @@ dependencies = [
     "toml==0.10.2",
     "loguru>=0.7.3",
     "mlflow>=3.7.0",
-    "{{ model }}",
+    "{{ ds_project }}",
     "joblib>=1.5.3",
     "databricks-feature-engineering>=0.13.0.1",
 ]
@@ -39,7 +39,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.uv.sources]
-{{ model }} = { path = "ds_backend/{{ model }}-1.0.0-py3-none-any.whl" }
+{{ ds_project | replace('_', '-') }} = { path = "ds_backend/{{ ds_project }}-1.0.0-py3-none-any.whl" }
 
 [dependency-groups]
 dev = [

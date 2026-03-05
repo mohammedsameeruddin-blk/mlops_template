@@ -194,6 +194,9 @@ def main(spark):
                         pipeline_data_path = base_output_dir / target_info["pipeline"].lstrip("/")
                         logger.info(f"Writing pipeline output to {pipeline_data_path}")
                         mlflow.log_param(key=f"target_pipeline_path", value=pipeline_data_path)
+                        pipeline_file_name = Path(target_info["pipeline"]).name
+                        mlflow.log_param(key="featurization_pipeline_file", value=pipeline_file_name)
+                        mlflow.set_tag(key="artifact_role", value="training_featurization")
                         joblib.dump(feature_pipeline, pipeline_data_path)
                         mlflow.log_artifact(
                             local_path=pipeline_data_path, artifact_path="featurization"

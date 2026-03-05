@@ -4,7 +4,6 @@ version: '1.0'
 stage: inference
 file: featurization.yml # same as current filename; do not change this
 audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
-model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
 actions:
   - name: {{ dataset_keyword }}_featurization
     enable: true
@@ -12,7 +11,6 @@ actions:
       class_path:
       kwargs:
         project_name: {{ project }}
-        model_name: {{ model }}
         process_name: {{ dataset_keyword }}_features
         source_data_type: file
         target_data_type: file
@@ -20,7 +18,7 @@ actions:
           # currently supports file/databricks_table
           file:
             data: /data/preprocessing/{{ dataset_keyword }}_incoming.csv
-            pipeline: {{ dataset_keyword }}.pkl # refers to the pkl file that was saved during training
+            pipeline: {{ dataset_keyword }}_features.pkl # refers to the pkl file that was saved during training
           databricks_table:
         outputs:
           # currently supports file/databricks_table

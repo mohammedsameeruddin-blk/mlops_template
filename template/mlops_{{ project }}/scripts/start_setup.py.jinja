@@ -117,7 +117,7 @@ def main(spark):
             end_time = datetime.now()
             duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)
 
-            logger.success(f"Started the setup for {stage_name}; {project_name} - {model_name}")
+            logger.success(f"Started the setup for {stage_name}; {project_name}")
     
     return experiment_id
 

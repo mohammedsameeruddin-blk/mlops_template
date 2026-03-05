@@ -1,10 +1,9 @@
 resources:
   jobs:
     training:
-      name: mlops_{{ model }}_training
+      name: mlops_{{ project }}_training
       tags:
         project_name: "{{ project }}"
-        model_name: "{{ model }}"
 
       environments:
         - environment_key: default
@@ -29,7 +28,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ model }}"
+              - "none"
               - --stage_name
               - "training"
               - --task_key
@@ -59,7 +58,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ model }}"
+              - "none"
               - --stage_name
               - "training"
               - --task_key
@@ -91,7 +90,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ model }}"
+              - "none"
               - --stage_name
               - "training"
               - --task_key
@@ -123,7 +122,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ model }}"
+              - "none"
               - --stage_name
               - "training"
               - --task_key
@@ -139,9 +138,41 @@ resources:
               - --experiment_id
               - '{% raw %}{{tasks.preprocess_data.values.experiment_id}}{% endraw %}'
         
-        - task_key: train_model
+        - task_key: split_data
           depends_on:
             - task_key: featurize_data
+          environment_key: default
+          spark_python_task:
+            python_file: "../scripts/train.py"
+            parameters:
+              - "--root_path"
+              - ${workspace.root_path}
+              - --runtime_env
+              - "${var.run_time_env}"
+              - --yml_task
+              - "splitter.yml"
+              - --project_name
+              - "{{ project }}"
+              - --model_name
+              - "none"
+              - --stage_name
+              - "training"
+              - --task_key
+              - '{% raw %}{{task.name}}{% endraw %}' # do not change this
+              - --task_run_id
+              - '{% raw %}{{task.run_id}}{% endraw %}' # do not change this
+              - --job_name
+              - '{% raw %}{{job.name}}{% endraw %}' # do not change this
+              - --job_id
+              - '{% raw %}{{job.id}}{% endraw %}' # do not change this
+              - --job_run_id
+              - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
+              - --experiment_id
+              - '{% raw %}{{tasks.featurize_data.values.experiment_id}}{% endraw %}'
+
+        - task_key: {{ model }}_training
+          depends_on:
+            - task_key: split_data
           environment_key: default
           spark_python_task:
             python_file: "../../scripts/train.py"
@@ -169,11 +200,11 @@ resources:
               - --job_run_id
               - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
               - --experiment_id
-              - '{% raw %}{{tasks.featurize_data.values.experiment_id}}{% endraw %}'
+              - '{% raw %}{{tasks.split_data.values.experiment_id}}{% endraw %}'
 
         - task_key: end_setup
           depends_on:
-            - task_key: train_model
+            - task_key: {{ model }}_training
           environment_key: default
           spark_python_task:
             python_file: "../../scripts/end_setup.py"
@@ -187,7 +218,7 @@ resources:
               - --project_name
               - "{{ project }}"
               - --model_name
-              - "{{ model }}"
+              - "none"
               - --stage_name
               - "training"
               - --task_key
@@ -201,4 +232,4 @@ resources:
               - --job_run_id
               - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
               - --experiment_id
-              - '{% raw %}{{tasks.train_model.values.experiment_id}}{% endraw %}'
+              - 'none'

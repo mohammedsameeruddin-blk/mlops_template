@@ -41,30 +41,53 @@ def log_params_with_prefix(params: dict, prefix: str):
     })
 
 
-def get_model_feature_pipeline(model_registry_name, pipeline_file, local_path):
+def get_training_feature_pipeline(experiment_id, pipeline_file, local_path):
     client = MlflowClient()
-    
-    model_versions = client.search_model_versions(f"name='{model_registry_name}'")
-    latest_version = max(model_versions, key=lambda x: int(x.version))
-    
-    model_version = client.get_model_version(
-        name=model_registry_name,
-        version=f"{latest_version.version}"
+
+    filter_string = (
+        f"tags.artifact_role = 'training_featurization' "
+        f"and params.featurization_pipeline_file = '{pipeline_file}'"
     )
-    run_id = model_version.run_id
-    
-    artifacts = client.list_artifacts(run_id=run_id, path="model/featurization")
-    for a in artifacts:
-        apath = a.path
-        file = apath.split('/')[-1]
-        if file == pipeline_file:
-            client.download_artifacts(
-                run_id=run_id,
-                path=apath,
-                dst_path=local_path
-            )
-            logger.info(f"Artifact saved in - `{local_path}`")
-            return local_path
+    candidate_runs = client.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string=filter_string,
+        order_by=["start_time DESC"],
+        max_results=50,
+    )
+
+    if not candidate_runs:
+        logger.warning(
+            "No tagged training featurization run found; falling back to latest successful featurization runs."
+        )
+        fallback_runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            filter_string="tags.run_status = 'SUCCESS'",
+            order_by=["start_time DESC"],
+            max_results=200,
+        )
+        candidate_runs = [
+            run for run in fallback_runs
+            if run.data.tags.get("mlflow.runName", "").endswith("_featurization")
+        ]
+
+    for run in candidate_runs:
+        run_id = run.info.run_id
+        artifacts = client.list_artifacts(run_id=run_id, path="featurization")
+        for artifact in artifacts:
+            artifact_path = artifact.path
+            artifact_file_name = artifact_path.split('/')[-1]
+            if artifact_file_name == pipeline_file:
+                client.download_artifacts(
+                    run_id=run_id,
+                    path=artifact_path,
+                    dst_path=local_path
+                )
+                logger.info(f"Featurization artifact saved in - `{local_path}`")
+                return local_path
+
+    raise FileNotFoundError(
+        f"Featurization pipeline '{pipeline_file}' not found in training featurization artifacts for experiment '{experiment_id}'."
+    )
 
 
 def main(spark):
@@ -117,8 +140,6 @@ def main(spark):
         logger.info("Saving the audit details in `hive_metastore`.")
         audit_table = placeholder_audit_table
     
-    model_registry_name = task_config["model_registry_name"]
-
     with mlflow.start_run(
         run_name="data_featurization",
         experiment_id=experiment_id,
@@ -196,8 +217,8 @@ def main(spark):
                         ).lstrip("/")
                         pl_output_path = base_output_dir / pipeline_output_dir
                         pl_output_path.mkdir(parents=True, exist_ok=True)
-                        get_model_feature_pipeline(
-                            model_registry_name=model_registry_name,
+                        get_training_feature_pipeline(
+                            experiment_id=experiment_id,
                             pipeline_file=source_info["pipeline"],
                             local_path=pl_output_path
                         )

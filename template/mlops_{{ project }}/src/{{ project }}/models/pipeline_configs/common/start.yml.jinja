@@ -3,7 +3,7 @@
 version: '1.0'
 file: start.yml # same as current filename; do not change this
 stage: common
-mlflow_experiment_name: {{ model }}
+mlflow_experiment_name: {{ project }}
 actions:
   - name: start_setup
     enable: true
@@ -11,6 +11,4 @@ actions:
       class_path: {{ project }}.common.utils.audit_utils:setup_project_audit_table
       kwargs:
         project_name: {{ project }}
-        model_name: {{ model }}
-        process_name: {{ model }}_start_setup
         audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
