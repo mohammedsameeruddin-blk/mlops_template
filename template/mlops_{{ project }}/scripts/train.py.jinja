@@ -217,7 +217,7 @@ def main(spark):
                                         experiment_id=experiment_id,
                                         nested=True
                                     ):
-                                        if mproblem_type == "classification":
+                                        if mproblem_type == "Classification":
                                             mlflow.log_metrics(metrics={
                                                 "accuracy": fold["accuracy"],
                                                 "precision": fold["precision"],
@@ -297,7 +297,7 @@ def main(spark):
                         mlflow.log_artifact(local_path=str(params_path))
                         # Log and register best model
                         X_sample = model_results["input_example"]
-                        if model_results["model_type"] == "classification":
+                        if model_results["model_type"] == "Classification":
                             y_sample = model_results["model"].predict(X_sample)
                         else:
                             y_sample = model_results["model"].predict(X_sample)
