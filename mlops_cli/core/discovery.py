@@ -20,8 +20,8 @@ class ProjectDiscovery:
             print(d)
             if (
                 d.is_dir()
-                and any((d / subdir / "config.toml").exists() for subdir in d.iterdir() if subdir.is_dir())
-                and any((d / subdir / "pipeline_configs").exists() for subdir in d.iterdir() if subdir.is_dir())
+                and (d / "config.toml").exists()
+                and (d / "pipeline_configs").exists()
             ):
                 return d
 
