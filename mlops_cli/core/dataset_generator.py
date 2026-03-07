@@ -1,7 +1,7 @@
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from jinja2 import Environment, FileSystemLoader
-from benedict import benedict
+from ruamel.yaml import YAML
+from io import StringIO
 
 
 class DatasetFileGenerator:
@@ -21,7 +21,11 @@ class DatasetFileGenerator:
             / "templates"
             / "dataset"
         )
-    
+
+        # YAML handler
+        self.yaml = YAML()
+        self.yaml.preserve_quotes = True
+
     def generate(self, dataset_name: str) -> list[Path]:
         context = {
             "dataset_keyword": dataset_name,
@@ -31,28 +35,40 @@ class DatasetFileGenerator:
         updated_files: list[Path] = []
 
         ## Training pipeline
-        # data.yml
         train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
         train_data_yml = self._render(
             template_name="data.yml.jinja",
             context=context,
             env=train_env
         )
+
         train_file = self.training_dir / "data.yml"
         self._merge_rendered_actions_into_file(train_file, train_data_yml)
         updated_files.append(train_file)
 
         ## Inference pipeline
-        # data.yml
         infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
         infer_data_yml = self._render(
             template_name="data.yml.jinja",
             context=context,
             env=infer_env
         )
+
         infer_file = self.inference_dir / "data.yml"
         self._merge_rendered_actions_into_file(infer_file, infer_data_yml)
         updated_files.append(infer_file)
+
+        ## Retraining pipeline
+        # retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
+        # retrain_data_yml = self._render(
+        #     template_name="data.yml.jinja",
+        #     context=context,
+        #     env=retrain_env
+        # )
+
+        # retrain_file = self.retraining_dir / "data.yml"
+        # self._merge_rendered_actions_into_file(retrain_file, retrain_data_yml)
+        # updated_files.append(retrain_file)
 
         return updated_files
 
@@ -62,30 +78,37 @@ class DatasetFileGenerator:
         return content
 
     def _merge_rendered_actions_into_file(self, existing_yml_path: Path, rendered_content: str) -> None:
-        if existing_yml_path.exists() and existing_yml_path.read_text(encoding="utf-8").strip():
-            existing_data = benedict.from_yaml(str(existing_yml_path))
-        else:
-            raise ValueError(f"Expected existing YAML file at {existing_yml_path} with content, but it does not exist or is empty.")
 
-        rendered_data = self._load_yaml_from_rendered_content(rendered_content)
+        if not existing_yml_path.exists() or not existing_yml_path.read_text(encoding="utf-8").strip():
+            raise ValueError(
+                f"Expected existing YAML file at {existing_yml_path} with content, but it does not exist or is empty."
+            )
+
+        # Load existing YAML
+        with existing_yml_path.open("r", encoding="utf-8") as f:
+            existing_data = self.yaml.load(f)
+
+        # Load rendered YAML from string
+        rendered_data = self.yaml.load(StringIO(rendered_content))
 
         existing_actions = existing_data.get("actions", [])
-        if not isinstance(existing_actions, list):
+        if existing_actions is None:
             existing_actions = []
 
         new_actions = rendered_data.get("actions", [])
-        if not isinstance(new_actions, list):
+        if new_actions is None:
             new_actions = []
 
-        existing_data["actions"] = [*existing_actions, *new_actions]
-        existing_data.to_yaml(filepath=str(existing_yml_path))
+        # Prevent duplicate actions
+        existing_action_names = {action.get("name") for action in existing_actions}
 
-    def _load_yaml_from_rendered_content(self, rendered_content: str) -> benedict:
-        with NamedTemporaryFile(mode="w", suffix=".yml", encoding="utf-8", delete=False) as temp_file:
-            temp_file.write(rendered_content)
-            temp_file_path = Path(temp_file.name)
+        for action in new_actions:
+            action_name = action.get("name")
+            if action_name not in existing_action_names:
+                existing_actions.append(action)
 
-        try:
-            return benedict.from_yaml(str(temp_file_path))
-        finally:
-            temp_file_path.unlink(missing_ok=True)
+        existing_data["actions"] = existing_actions
+
+        # Write back preserving YAML formatting
+        with existing_yml_path.open("w", encoding="utf-8") as f:
+            self.yaml.dump(existing_data, f)
