@@ -1,0 +1,24 @@
+actions:
+  - name: {{ dataset_keyword }}_featurization
+    enable: true
+    functions:
+      class_path: <data_science_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_features
+        source_data_type: file
+        target_data_type: file
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/preprocessing/{{ dataset_keyword }}.csv
+            pipeline:
+          databricks_table:
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/featurization/{{ dataset_keyword }}.csv
+            pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
+          databricks_table:
+            feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
+            primary_key: "{{ dataset_keyword }}_id" # change as per the requirement

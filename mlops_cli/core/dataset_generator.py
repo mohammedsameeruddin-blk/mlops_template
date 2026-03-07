@@ -36,39 +36,45 @@ class DatasetFileGenerator:
 
         ## Training pipeline
         train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
-        train_data_yml = self._render(
-            template_name="data.yml.jinja",
-            context=context,
-            env=train_env
-        )
+        training_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        for jfile in training_files:
+            rendered_content = self._render(
+                template_name=jfile,
+                context=context,
+                env=train_env
+            )
 
-        train_file = self.training_dir / "data.yml"
-        self._merge_rendered_actions_into_file(train_file, train_data_yml)
-        updated_files.append(train_file)
+            target_file = self.training_dir / jfile.replace(".jinja", "")
+            self._merge_rendered_actions_into_file(target_file, rendered_content)
+            updated_files.append(target_file)
 
         ## Inference pipeline
         infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
-        infer_data_yml = self._render(
-            template_name="data.yml.jinja",
-            context=context,
-            env=infer_env
-        )
+        inference_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        for jfile in inference_files:
+            rendered_content = self._render(
+                template_name=jfile,
+                context=context,
+                env=infer_env
+            )
 
-        infer_file = self.inference_dir / "data.yml"
-        self._merge_rendered_actions_into_file(infer_file, infer_data_yml)
-        updated_files.append(infer_file)
+            target_file = self.inference_dir / jfile.replace(".jinja", "")
+            self._merge_rendered_actions_into_file(target_file, rendered_content)
+            updated_files.append(target_file)
 
-        ## Retraining pipeline
+        # ## Retraining pipeline
         # retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
-        # retrain_data_yml = self._render(
-        #     template_name="data.yml.jinja",
-        #     context=context,
-        #     env=retrain_env
-        # )
+        # retraining_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        # for jfile in retraining_files:
+        #     rendered_content = self._render(
+        #         template_name=jfile,
+        #         context=context,
+        #         env=retrain_env
+        #     )
 
-        # retrain_file = self.retraining_dir / "data.yml"
-        # self._merge_rendered_actions_into_file(retrain_file, retrain_data_yml)
-        # updated_files.append(retrain_file)
+        #     target_file = self.retraining_dir / jfile.replace(".jinja", "")
+        #     self._merge_rendered_actions_into_file(target_file, rendered_content)
+        #     updated_files.append(target_file)
 
         return updated_files
 

@@ -55,14 +55,14 @@ def add_dataset(project_path: str, dataset_name: str):
     # Generate dataset files (Jinja only)
     generator = DatasetFileGenerator(project_root)
 
-    click.echo(f"{Fore.CYAN}Creating dataset files...{Style.RESET_ALL}")
+    click.echo(f"{Fore.CYAN}Updating dataset files...{Style.RESET_ALL}")
     updated_files = generator.generate(dataset_name)
 
     # Report results
     click.echo(
         f"\n{Fore.GREEN}✓ Successfully created new dataset: {dataset_name}{Style.RESET_ALL}\n"
     )
-    click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
+    click.echo(f"{Fore.GREEN}Updated files:{Style.RESET_ALL}")
     for file_path in updated_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
 

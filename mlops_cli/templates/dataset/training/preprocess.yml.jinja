@@ -1,0 +1,22 @@
+actions:
+  - name: {{ dataset_keyword }}_preprocessing
+    enable: true
+    functions:
+      class_path: <data_science_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_preprocess
+        source_data_type: databricks_table
+        target_data_type: file
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/preprocessing/{{ dataset_keyword }}.csv
+            pipeline:
+          databricks_table:
