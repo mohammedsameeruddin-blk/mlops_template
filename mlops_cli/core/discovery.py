@@ -65,7 +65,7 @@ class ProjectDiscovery:
                         if dataset_name:
                             datasets.add(dataset_name)
                 else:
-                    raise ValueError(f"Unexpected file in pipeline_configs: {yml_file}")
+                    continue
 
         if training_dir.exists():
             collect_from_pipeline_dir(training_dir)
