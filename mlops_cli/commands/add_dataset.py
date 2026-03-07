@@ -56,16 +56,16 @@ def add_dataset(project_path: str, dataset_name: str):
     generator = DatasetFileGenerator(project_root)
 
     click.echo(f"{Fore.CYAN}Creating dataset files...{Style.RESET_ALL}")
-    created_contents = generator.generate(dataset_name)
+    updated_files = generator.generate(dataset_name)
 
     # Report results
     click.echo(
         f"\n{Fore.GREEN}✓ Successfully created new dataset: {dataset_name}{Style.RESET_ALL}\n"
     )
     click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
-    for file_content in created_contents:
-        click.echo(f"  • {file_content}")
+    for file_path in updated_files:
+        click.echo(f"  • {file_path.relative_to(project_path)}")
 
-    # click.echo(f"\n{Fore.YELLOW}Next steps:{Style.RESET_ALL}")
-    # click.echo("  1. Review the generated files")
-    # click.echo("  2. Use the dataset in model training/inference")
+    click.echo(f"\n{Fore.YELLOW}Next steps:{Style.RESET_ALL}")
+    click.echo("  1. Review the updated files")
+    click.echo("  2. Use the dataset in model training/inference")
