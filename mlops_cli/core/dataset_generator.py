@@ -25,6 +25,8 @@ class DatasetFileGenerator:
         # YAML handler
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
+        self.yaml.indent(mapping=2, sequence=4, offset=2)
+        self.yaml.width = 4096
 
     def generate(self, dataset_name: str) -> list[Path]:
         context = {
