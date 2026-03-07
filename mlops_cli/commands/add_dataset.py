@@ -6,6 +6,7 @@ import click
 from colorama import Fore, Style
 
 from mlops_cli.core.discovery import ProjectDiscovery
+from mlops_cli.core.dataset_generator import DatasetFileGenerator
 
 
 @click.command(name="add-dataset")
@@ -45,25 +46,25 @@ def add_dataset(project_path: str, dataset_name: str):
         f"{Style.RESET_ALL}\n"
     )
 
-    # if dataset_name in existing_datasets:
-    #     click.echo(
-    #         f"{Fore.RED}Error: Dataset '{dataset_name}' already exists{Style.RESET_ALL}"
-    #     )
-    #     raise click.Abort()
+    if dataset_name in existing_datasets:
+        click.echo(
+            f"{Fore.RED}Error: Dataset '{dataset_name}' already exists{Style.RESET_ALL}"
+        )
+        raise click.Abort()
 
-    # # Generate dataset files (Jinja only)
-    # generator = DatasetFileGenerator(project_root)
+    # Generate dataset files (Jinja only)
+    generator = DatasetFileGenerator(project_root)
 
-    # click.echo(f"{Fore.CYAN}Creating dataset files...{Style.RESET_ALL}")
-    # created_files = generator.generate(dataset_name)
+    click.echo(f"{Fore.CYAN}Creating dataset files...{Style.RESET_ALL}")
+    created_contents = generator.generate(dataset_name)
 
-    # # Report results
-    # click.echo(
-    #     f"\n{Fore.GREEN}✓ Successfully created new dataset: {dataset_name}{Style.RESET_ALL}\n"
-    # )
-    # click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
-    # for file_path in created_files:
-    #     click.echo(f"  • {file_path.relative_to(project_path)}")
+    # Report results
+    click.echo(
+        f"\n{Fore.GREEN}✓ Successfully created new dataset: {dataset_name}{Style.RESET_ALL}\n"
+    )
+    click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
+    for file_content in created_contents:
+        click.echo(f"  • {file_content}")
 
     # click.echo(f"\n{Fore.YELLOW}Next steps:{Style.RESET_ALL}")
     # click.echo("  1. Review the generated files")

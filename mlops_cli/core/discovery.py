@@ -17,7 +17,6 @@ class ProjectDiscovery:
             return None
 
         for d in self.src_path.iterdir():
-            print(d)
             if (
                 d.is_dir()
                 and (d / "config.toml").exists()
