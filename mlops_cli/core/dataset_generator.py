@@ -28,6 +28,10 @@ class DatasetFileGenerator:
         self.yaml.indent(mapping=2, sequence=4, offset=2)
         self.yaml.width = 4096
 
+        self.train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
+        self.infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
+        # self.retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
+
     def generate(self, dataset_name: str) -> list[Path]:
         context = {
             "dataset_keyword": dataset_name,
@@ -37,45 +41,51 @@ class DatasetFileGenerator:
         updated_files: list[Path] = []
 
         ## Training pipeline
-        train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
-        training_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        training_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja", "splitter.yml.jinja"]
         for jfile in training_files:
             rendered_content = self._render(
                 template_name=jfile,
                 context=context,
-                env=train_env
+                env=self.train_env
             )
 
             target_file = self.training_dir / jfile.replace(".jinja", "")
-            self._merge_rendered_actions_into_file(target_file, rendered_content)
+            if jfile == "splitter.yml.jinja":
+                self._merge_rendered_features_into_file(target_file, rendered_content)
+            else:
+                self._merge_rendered_actions_into_file(target_file, rendered_content)
             updated_files.append(target_file)
 
         ## Inference pipeline
-        infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
-        inference_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        inference_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja", "prepare_input.yml.jinja"]
         for jfile in inference_files:
             rendered_content = self._render(
                 template_name=jfile,
                 context=context,
-                env=infer_env
+                env=self.infer_env
             )
 
             target_file = self.inference_dir / jfile.replace(".jinja", "")
-            self._merge_rendered_actions_into_file(target_file, rendered_content)
+            if jfile == "prepare_input.yml.jinja":
+                self._merge_rendered_features_into_file(target_file, rendered_content)
+            else:
+                self._merge_rendered_actions_into_file(target_file, rendered_content)
             updated_files.append(target_file)
 
         # ## Retraining pipeline
-        # retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
-        # retraining_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja"]
+        # retraining_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja", "splitter.yml.jinja"]
         # for jfile in retraining_files:
         #     rendered_content = self._render(
         #         template_name=jfile,
         #         context=context,
-        #         env=retrain_env
+        #         env=self.retrain_env
         #     )
 
         #     target_file = self.retraining_dir / jfile.replace(".jinja", "")
-        #     self._merge_rendered_actions_into_file(target_file, rendered_content)
+        #     if jfile == "splitter.yml.jinja":
+        #         self._merge_rendered_features_into_file(target_file, rendered_content)
+        #     else:
+        #         self._merge_rendered_actions_into_file(target_file, rendered_content)
         #     updated_files.append(target_file)
 
         return updated_files
@@ -86,7 +96,6 @@ class DatasetFileGenerator:
         return content
 
     def _merge_rendered_actions_into_file(self, existing_yml_path: Path, rendered_content: str) -> None:
-
         if not existing_yml_path.exists() or not existing_yml_path.read_text(encoding="utf-8").strip():
             raise ValueError(
                 f"Expected existing YAML file at {existing_yml_path} with content, but it does not exist or is empty."
@@ -120,3 +129,38 @@ class DatasetFileGenerator:
         # Write back preserving YAML formatting
         with existing_yml_path.open("w", encoding="utf-8") as f:
             self.yaml.dump(existing_data, f)
+    
+    def _merge_rendered_features_into_file(self, existing_yml_path: Path, rendered_content: str) -> None:
+        if not existing_yml_path.exists():
+            raise ValueError(f"{existing_yml_path} does not exist")
+
+        # Load YAML
+        with existing_yml_path.open("r", encoding="utf-8") as f:
+            data = self.yaml.load(f)
+
+        # Load rendered feature YAML
+        rendered_data = self.yaml.load(StringIO(rendered_content))
+
+        new_datasets = rendered_data.get("databricks_table", {})
+        
+        actions = data.get("actions", [])
+        if not actions:
+            raise ValueError(f"No actions defined in {existing_yml_path}")
+
+        features = (
+            actions[0]
+            ["functions"]
+            ["kwargs"]
+            ["inputs"]
+            ["databricks_table"]
+            .setdefault("features", {})
+        )
+
+        # Merge datasets safely
+        for dataset_name, dataset_value in new_datasets.items():
+            if dataset_name not in features:
+                features[dataset_name] = dataset_value
+
+        # Write YAML back
+        with existing_yml_path.open("w", encoding="utf-8") as f:
+            self.yaml.dump(data, f)

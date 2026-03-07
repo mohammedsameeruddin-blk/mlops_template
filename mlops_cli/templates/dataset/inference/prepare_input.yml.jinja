@@ -1,0 +1,4 @@
+databricks_table:
+  {{ dataset_keyword }}:
+      feature_run_name: {{ dataset_keyword }}_featurization
+      feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
