@@ -12,7 +12,7 @@ from mlops_cli.core.discovery import ProjectDiscovery
 @click.argument("project_path", type=click.Path(exists=True))
 @click.option("--dataset-name", "-d", required=True, help="Name of the new dataset")
 def add_dataset(project_path: str, dataset_name: str):
-    """Add a new dataset to a data science project"""
+    """Add a new dataset to a MLOps project"""
 
     # Validate dataset name format
     if not dataset_name or re.search(r'[^a-zA-Z0-9_-]', dataset_name):
@@ -27,7 +27,7 @@ def add_dataset(project_path: str, dataset_name: str):
     # Validate project
     if not discovery.is_valid_project():
         click.echo(
-            f"{Fore.RED}Error: {project_path} is not a valid data science project{Style.RESET_ALL}"
+            f"{Fore.RED}Error: {project_path} is not a valid mlops project{Style.RESET_ALL}"
         )
         raise click.Abort()
 

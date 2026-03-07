@@ -13,7 +13,7 @@ pip install -e .
 ### Add a New Dataset to a Project
 
 ```bash
-mlpos-cli add-dataset /path/to/project --dataset-name my_dataset
+mlops-cli add-dataset /path/to/project --dataset-name my_dataset
 ```
 
 ### Add a New Model to a Project
