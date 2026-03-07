@@ -1,0 +1,1 @@
+"""Command for adding a new model to a project"""

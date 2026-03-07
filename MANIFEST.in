@@ -1,0 +1,1 @@
+recursive-include mlops_cli/templates *.jinja *.yml
