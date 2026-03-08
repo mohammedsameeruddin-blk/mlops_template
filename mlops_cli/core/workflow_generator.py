@@ -11,9 +11,14 @@ class WorkflowFileGenerator:
         self.project_root = project_root
         self.project_name = project_root.name
 
-        self.training_job = project_root / "workflow_jobs" / f"wf_{self.project_name}_training.yml"
-        self.inference_job = project_root / "workflow_jobs" / f"wf_{self.project_name}_inference.yml"
-        # self.retraining_job = project_root / "workflow_jobs" / f"wf_{self.project_name}_retraining.yml"
+        self.workflow_dir = project_root / "workflow_jobs"
+        self.training_job = self.workflow_dir / f"wf_{self.project_name}_training.yml"
+        self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
+        # self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
+
+        print("Project root:", project_root)
+        print("Training job path:", self.training_job)
+        print("File exists:", self.training_job.exists())
 
         # YAML handler
         self.yaml = YAML()
