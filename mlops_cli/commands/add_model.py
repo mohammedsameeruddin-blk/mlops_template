@@ -65,15 +65,19 @@ def add_model(project_path: str, model_name: str):
     click.echo(
         f"{Fore.CYAN}Updating workflow jobs...{Style.RESET_ALL}"
     )
-    workflow_files = workflow_generator.generate(model_name)
-    created_files.extend(workflow_files)
+    updated_workflow_files = workflow_generator.generate(model_name)
 
     # Report results
     click.echo(
         f"\n{Fore.GREEN}✓ Successfully created new model: {model_name}{Style.RESET_ALL}\n"
     )
+    
     click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
     for file_path in created_files:
+        click.echo(f"  • {file_path.relative_to(project_path)}")
+    
+    click.echo(f"\n{Fore.GREEN}Updated workflow files:{Style.RESET_ALL}")
+    for file_path in updated_workflow_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
 
     click.echo(f"\n{Fore.YELLOW}Next steps:{Style.RESET_ALL}")
