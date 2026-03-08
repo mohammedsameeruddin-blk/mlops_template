@@ -50,10 +50,6 @@ actions:
         process_name: {{ model }}_training
         source_data_type: file
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
-        feature_pipelines:
-          # multiple feature pipelines can be added
-          {{ dataset_keyword }}:
-            pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
         inputs:
           # currently supports file/databricks_table
           file:

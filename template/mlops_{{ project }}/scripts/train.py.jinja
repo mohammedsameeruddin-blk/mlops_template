@@ -322,22 +322,38 @@ def main(spark):
                         )
                         mlflow.log_param(key="scalar", value=scaler_path)
 
-                        # Log feature pipelines artifacts together
-                        feature_pipelines_logs = func_kwargs["feature_pipelines"]
-                        for tdata, pipeline in feature_pipelines_logs.items():
-                            pipeline_full_path = base_output_dir / pipeline["pipeline"].lstrip("/")
-                            mlflow.log_artifact(
-                                local_path=pipeline_full_path,
-                                artifact_path=f"model/featurization/"
+                        # Identify the feature pkl files in the directory
+                        features_base_path = base_output_dir / "data" / "featurization"
+                        feature_files = sorted(features_base_path.rglob("*_features.pkl"))
+
+                        if feature_files:
+                            feature_files_relative = [
+                                str(path.relative_to(base_output_dir)) for path in feature_files
+                            ]
+                            logger.info(
+                                f"Found feature files in {features_base_path}: {feature_files_relative}"
                             )
-                        
-                        # Log feature pipelines metadata
-                        mlflow.log_param(
-                            key="feature_pipelines",
-                            value=json.dumps({
-                                k: v["pipeline"] for k, v in feature_pipelines_logs.items()
-                            })
-                        )
+                            # Log feature pipelines metadata
+                            features_metadata = {}
+                            for i, feature_file in enumerate(feature_files):
+                                dataset_name = feature_file.stem.replace("_features", "")
+                                p_path = feature_file.relative_to(base_output_dir).as_posix()
+                                features_metadata[dataset_name] = p_path
+                            mlflow.log_param(
+                                key="feature_pipelines",
+                                value=json.dumps(features_metadata)
+                            )
+                            
+                            # Log feature pipelines artifacts together
+                            for feature_file in feature_files:
+                                mlflow.log_artifact(
+                                    local_path=str(feature_file),
+                                    artifact_path="model/featurization/"
+                                )
+                        else:
+                            logger.warning(
+                                f"No *_features.pkl files found in {features_base_path}"
+                            )
                     
                     if action_name == "log_experiment_details":
                         cls(
