@@ -1,0 +1,119 @@
+import requests
+
+def send_gchat_failure(webhook_url, environment, project, task, job_name, error_message, run_url):
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "databricks_failure",
+                "card": {
+                    "header": {
+                        "title": "🚨 Databricks Job Failed",
+                        "subtitle": f"Environment: {environment}"
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                                f"\n<b>Task:</b> {task}<br>"
+                                                f"\n<b>Job:</b> {job_name}<br>"
+                                                f"\n<b>Error:</b> {error_message}"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": [
+                                            {
+                                                "text": "OPEN RUN",
+                                                "onClick": {
+                                                    "openLink": {"url": run_url}
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+
+
+def send_gchat_training_success(webhook_url, environment, project, models, job_name, run_url, experiments_url=None):
+
+    models_bullets = "".join(f"• <i>{model}</i><br>" for model in models)
+    buttons = [
+        {
+            "text": "OPEN DATABRICKS RUN",
+            "onClick": {
+                "openLink": {
+                    "url": run_url
+                }
+            }
+        }
+    ]
+    if experiments_url:
+        buttons.append(
+            {
+                "text": "OPEN EXPERIMENTS",
+                "onClick": {
+                    "openLink": {
+                        "url": experiments_url
+                    }
+                }
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "databricks_success",
+                "card": {
+                    "header": {
+                        "title": "✅ Databricks Job Succeeded",
+                        "subtitle": f"Environment: {environment}"
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                                f"\n<b>Models Registered:</b><br>"
+                                                f"{models_bullets}"
+                                                f"\n<b>Job:</b> {job_name}<br>"
+                                                f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": buttons
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+
+    print("✅ Google Chat success alert sent successfully")

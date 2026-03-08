@@ -13,6 +13,7 @@ from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config
 )
+from {{ project }}.common.utils.notify_utils import send_gchat_failure
 
 
 def load_class(class_path: str):
@@ -105,14 +106,27 @@ def main(spark):
         run_status = ""
         error_details = ""
 
+        workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
+        run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
+        env_name_notify = runtime_env.upper()
+
         try:
             # assumes 'spark' is provided by Databricks environment
             result = cls(spark=spark, func_conf=func_conf)
             run_status = "SUCCESS"
         except Exception as e:
             run_status = "FAILED"
-            error_details = str(e)
-            logger.error(f"Failure: {error_details}")
+            error_details = str(e)[:500]
+            logger.error(f"Action failed: {action_name}")
+            send_gchat_failure(
+                webhook_url=env_context["WEBHOOK_URL"],
+                environment=env_name_notify,
+                project=project_name,
+                task=task_key,
+                job_name=job_name,
+                error_message=error_details,
+                run_url=run_url
+            )
         finally:
             end_time = datetime.now()
             duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)

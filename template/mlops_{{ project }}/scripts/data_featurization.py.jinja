@@ -17,6 +17,7 @@ from {{ project }}.common.utils.config_utils import (
     load_project_config, 
     load_task_config
 )
+from {{ project }}.common.utils.notify_utils import send_gchat_failure
 from {{ project }}.common.utils.audit_utils import write_to_audit_table
 
 
@@ -108,6 +109,10 @@ def main(spark):
             start_time = datetime.now()
             run_status = ""
             error_details = ""
+
+            workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
+            run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
+            env_name_notify = runtime_env.upper()
 
             with mlflow.start_run(
                 run_name=action_name,
@@ -205,8 +210,17 @@ def main(spark):
                     run_status = "SUCCESS"
                 except Exception as e:
                     run_status = "FAILED"
-                    error_details = str(e)
+                    error_details = str(e)[:500]
                     logger.error(f"Action failed: {action_name}")
+                    send_gchat_failure(
+                        webhook_url=env_context["WEBHOOK_URL"],
+                        environment=env_name_notify,
+                        project=project_name,
+                        task=task_key,
+                        job_name=job_name,
+                        error_message=error_details,
+                        run_url=run_url
+                    )
                     raise
 
                 finally:

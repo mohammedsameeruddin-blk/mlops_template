@@ -11,6 +11,10 @@ from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config
 )
+from {{ project }}.common.utils.notify_utils import (
+    send_gchat_failure,
+    send_gchat_training_success
+)
 
 
 def load_class(class_path: str):
@@ -34,6 +38,7 @@ def main(spark):
     parser.add_argument("--job_id", required=True)
     parser.add_argument("--job_run_id", required=True)
     parser.add_argument("--experiment_id", required=True)
+    parser.add_argument("--models_registered", required=True, default="none")
 
     args = parser.parse_args()
     root_path = args.root_path
@@ -48,6 +53,12 @@ def main(spark):
     job_id = args.job_id
     job_run_id = args.job_run_id
     experiment_id = args.experiment_id
+    models_registered = args.models_registered
+    models_registered_list = [
+        model.strip() for model in models_registered.split(",")
+        if model.strip() and model.strip().lower() != "none"
+    ]
+    logger.info(f"Models registered: {models_registered_list}")
 
     # load config from TOML based on runtime_env
     env_context = load_project_config(
@@ -72,27 +83,54 @@ def main(spark):
         start_time = datetime.now()
         run_status = ""
         error_details = ""
+
+        workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
+        run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
+        env_name_notify = runtime_env.upper()
+        models_notify = models_registered_list
+        experiment_url = f"{workspace_url}/#mlflow/experiments/{experiment_id}" if experiment_id else None
         
         try:
             # assumes 'spark' is provided by Databricks environment
             result = cls(spark=spark, func_conf=func_conf)
             run_status = "SUCCESS"
+            if stage_name == "training":
+                send_gchat_training_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiments_url=experiment_url
+                )
         except Exception as e:
             run_status = "FAILED"
-            error_details = str(e)
-            logger.error(f"Failure: {error_details}")
+            error_details = str(e)[:500]
+            logger.error(f"Action failed: {action_name}")
+            send_gchat_failure(
+                webhook_url=env_context["WEBHOOK_URL"],
+                environment=env_name_notify,
+                project=project_name,
+                task=task_key,
+                job_name=job_name,
+                error_message=error_details,
+                run_url=run_url
+            )
+            raise
         finally:
             end_time = datetime.now()
             duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)
 
             logger.success(f"Ended the setup for {stage_name}; {project_name}")
     
-    return experiment_id
+    return experiment_id, models_registered_list
 
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
 
-    experiment_id = main(spark=spark)
+    experiment_id, models_registered_list = main(spark=spark)
     dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+    dbutils.jobs.taskValues.set(key="models_registered", value=",".join(models_registered_list))
