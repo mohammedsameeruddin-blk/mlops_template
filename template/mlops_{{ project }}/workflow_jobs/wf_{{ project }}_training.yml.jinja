@@ -232,6 +232,6 @@ resources:
               - --job_run_id
               - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
               - --experiment_id
-              - '{% raw %}{{tasks.{{ model }}_training.values.experiment_id}}{% endraw %}'
+              - '{% raw %}{{tasks.{% endraw %}{{ model }}{% raw %}_training.values.experiment_id}}{% endraw %}'
               - --models_registered
               - '{{ model }},'
