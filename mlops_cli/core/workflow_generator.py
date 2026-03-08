@@ -11,7 +11,8 @@ class WorkflowFileGenerator:
         self.project_root = project_root
         self.project_name = project_root.name
 
-        self.workflow_dir = project_root / "workflow_jobs"
+        self.repo_root = project_root.parents[1]
+        self.workflow_dir = self.repo_root / "workflow_jobs"
         self.training_job = self.workflow_dir / f"wf_{self.project_name}_training.yml"
         self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
         # self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
