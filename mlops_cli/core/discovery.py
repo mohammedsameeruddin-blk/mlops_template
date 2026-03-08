@@ -39,7 +39,7 @@ class ProjectDiscovery:
 
         training_dir = project / "pipeline_configs" / "training"
         inference_dir = project / "pipeline_configs" / "inference"
-        retraining_dir = project / "pipeline_configs" / "retraining"
+        # retraining_dir = project / "pipeline_configs" / "retraining"
 
         def collect_from_pipeline_dir(pipeline_dir: Path) -> None:
             for yml_file in pipeline_dir.glob("*.yml"):
@@ -72,30 +72,35 @@ class ProjectDiscovery:
         if inference_dir.exists():
             collect_from_pipeline_dir(inference_dir)
 
-        if retraining_dir.exists():
-            collect_from_pipeline_dir(retraining_dir)
+        # if retraining_dir.exists():
+        #     collect_from_pipeline_dir(retraining_dir)
 
         return sorted(datasets)
     
     # Model discovery
     def get_models(self) -> List[str]:
-        project_root = self.get_project_root()
-        if project_root is None:
+        project = self.get_project_root()
+        if project is None:
             return []
 
-        models_dir = project_root / "models"
-        if not models_dir.exists():
-            return []
+        training_dir = project / "pipeline_configs" / "training"
+        inference_dir = project / "pipeline_configs" / "inference"
+        # retraining_dir = project / "pipeline_configs" / "retraining"
 
-        models = []
+        models = set()
 
-        for d in models_dir.iterdir():
+        for d in training_dir.iterdir():
             if not d.is_dir():
                 continue
 
-            # minimal validity check
-            if (d / "training").exists() and (d / "inference").exists():
-                models.append(d.name)
+            model_name = d.name
+
+            train_file = training_dir / model_name / "train.yml"
+            inference_file = inference_dir / model_name / "inference.yml"
+            # retrain_file = retraining_dir / model_name / "train.yml"
+
+            if train_file.exists() and inference_file.exists():
+                models.add(model_name)
 
         return sorted(models)
 
