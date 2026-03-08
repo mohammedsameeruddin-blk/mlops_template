@@ -38,7 +38,9 @@ def main(spark):
     parser.add_argument("--job_id", required=True)
     parser.add_argument("--job_run_id", required=True)
     parser.add_argument("--experiment_id", required=True)
-    parser.add_argument("--models_registered", required=True, default="none")
+    # optional args
+    parser.add_argument("--models_registered", default="none")
+    parser.add_argument("--models_used", default="none")
 
     args = parser.parse_args()
     root_path = args.root_path
@@ -53,12 +55,21 @@ def main(spark):
     job_id = args.job_id
     job_run_id = args.job_run_id
     experiment_id = args.experiment_id
-    models_registered = args.models_registered
-    models_registered_list = [
-        model.strip() for model in models_registered.split(",")
-        if model.strip() and model.strip().lower() != "none"
-    ]
-    logger.info(f"Models registered: {models_registered_list}")
+
+    models_registered_list = []
+    models_used_list = []
+    if args.stage_name == "training":
+        models_registered_list = [
+            m.strip() for m in args.models_registered.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models registered: {models_registered_list}")
+    elif args.stage_name == "inference":
+        models_used_list = [
+            m.strip() for m in args.models_used.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models used for inference: {models_used_list}")
 
     # load config from TOML based on runtime_env
     env_context = load_project_config(
@@ -87,7 +98,11 @@ def main(spark):
         workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
         run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
         env_name_notify = runtime_env.upper()
-        models_notify = models_registered_list
+        models_notify = []
+        if stage_name == "training":
+            models_notify = models_registered_list
+        elif stage_name == "inference":
+            models_notify = models_used_list
         experiment_url = f"{workspace_url}/#mlflow/experiments/{experiment_id}" if experiment_id else None
         
         try:
@@ -124,13 +139,12 @@ def main(spark):
 
             logger.success(f"Ended the setup for {stage_name}; {project_name}")
     
-    return experiment_id, models_registered_list
+    return experiment_id, models_notify
 
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
 
-    experiment_id, models_registered_list = main(spark=spark)
+    experiment_id, models_notify = main(spark=spark)
     dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
-    dbutils.jobs.taskValues.set(key="models_registered", value=",".join(models_registered_list))

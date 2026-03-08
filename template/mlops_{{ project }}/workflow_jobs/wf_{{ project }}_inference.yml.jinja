@@ -232,4 +232,6 @@ resources:
               - --job_run_id
               - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
               - --experiment_id
-              - 'none'
+              - '{% raw %}{{tasks.{% endraw %}{{ model }}{% raw %}_inference.values.experiment_id}}{% endraw %}'
+              - --models_used
+              - '{{ model }}'
