@@ -12,7 +12,7 @@ from mlops_cli.core.model_generator import ModelFileGenerator
 @click.command(name="add-model")
 @click.argument("project_path", type=click.Path(exists=True))
 @click.option("--model-name", "-m", required=True, help="Name of the new model")
-def add_model(project_path: str, model_name: str, model_type: str):
+def add_model(project_path: str, model_name: str):
     """Add a new model to a mlops project"""
 
     # Validate model name format
@@ -55,9 +55,9 @@ def add_model(project_path: str, model_name: str, model_type: str):
     generator = ModelFileGenerator(project_root)
 
     click.echo(
-        f"{Fore.CYAN}Creating model '{model_name}' ({model_type})...{Style.RESET_ALL}"
+        f"{Fore.CYAN}Creating model '{model_name}'...{Style.RESET_ALL}"
     )
-    created_files = generator.generate(model_name, model_type)
+    created_files = generator.generate(model_name)
 
     # Report results
     click.echo(
