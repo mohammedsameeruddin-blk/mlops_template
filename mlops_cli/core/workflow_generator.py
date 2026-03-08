@@ -180,5 +180,5 @@ class WorkflowFileGenerator:
 
                 updated = ",".join(models)
 
-                params[i + 1] = f"'{updated}'"
+                params[i + 1] = updated
                 break
