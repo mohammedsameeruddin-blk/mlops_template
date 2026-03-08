@@ -11,7 +11,7 @@ actions:
       class_path: {{ ds_project }}.models.{{ model }}.inference.scoring:BatchScoring
       kwargs:
         project_name: {{ project }}
-        process_name: {{ model }}_data_split
+        process_name: {{ model }}_prediction
         source_data_type: file
         target_data_type: databricks_table
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
