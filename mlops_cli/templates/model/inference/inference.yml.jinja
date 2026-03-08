@@ -1,0 +1,29 @@
+# change as per the requirement
+
+version: '1.0'
+stage: inference
+file: inference.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: batch_prediction
+    enable: true
+    functions:
+      class_path: <ds_project>.models.{{ model }}.inference.scoring:BatchScoring
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_prediction
+        source_data_type: file
+        target_data_type: databricks_table
+        model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data: /data/input_preparation/merged_input.csv
+            pipeline: scaler.pkl # refers to the pkl file that was saved during training
+          databricks_table:
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"
