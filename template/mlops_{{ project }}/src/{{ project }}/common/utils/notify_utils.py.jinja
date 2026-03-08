@@ -55,7 +55,7 @@ def send_gchat_training_success(webhook_url, environment, project, models, job_n
     models_bullets = "".join(f"• <i>{model}</i><br>" for model in models)
     buttons = [
         {
-            "text": "OPEN DATABRICKS RUN",
+            "text": "OPEN RUN",
             "onClick": {
                 "openLink": {
                     "url": run_url
