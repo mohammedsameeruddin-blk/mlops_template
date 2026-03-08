@@ -17,10 +17,6 @@ class WorkflowFileGenerator:
         self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
         # self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
 
-        print("Project root:", project_root)
-        print("Training job path:", self.training_job)
-        print("File exists:", self.training_job.exists())
-
         # YAML handler
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
