@@ -95,6 +95,9 @@ class WorkflowFileGenerator:
         # update end_setup dependency
         end_task["depends_on"].append({"task_key": new_task_key})
 
+        # update model list parameter in end_setup
+        self._update_model_param(end_task, "--models_registered", model_name)
+
         with self.training_job.open("w") as f:
             self.yaml.dump(data, f)
 
@@ -155,5 +158,27 @@ class WorkflowFileGenerator:
         # update end_setup dependency
         end_task["depends_on"].append({"task_key": new_task_key})
 
+        # update model list parameter in end_setup
+        self._update_model_param(end_task, "--models_used", model_name)
+
         with self.inference_job.open("w") as f:
             self.yaml.dump(data, f)
+    
+    def _update_model_param(self, end_task, param_name: str, model_name: str):
+        params = end_task["spark_python_task"]["parameters"]
+
+        for i, p in enumerate(params):
+            if p == param_name:
+                current = params[i + 1].strip("'")
+
+                # split existing models
+                models = [m.strip() for m in current.split(",") if m.strip()]
+
+                # avoid duplicates
+                if model_name not in models:
+                    models.append(model_name)
+
+                updated = ",".join(models)
+
+                params[i + 1] = f"'{updated}'"
+                break
