@@ -7,6 +7,7 @@ from colorama import Fore, Style
 
 from mlops_cli.core.discovery import ProjectDiscovery
 from mlops_cli.core.model_generator import ModelFileGenerator
+from mlops_cli.core.workflow_generator import WorkflowFileGenerator
 
 
 @click.command(name="add-model")
@@ -51,13 +52,21 @@ def add_model(project_path: str, model_name: str):
             f"{Fore.RED}Error: Model '{model_name}' already exists{Style.RESET_ALL}"
         )
         raise click.Abort()
-
-    generator = ModelFileGenerator(project_root)
-
+    
+    # Model generator
+    model_generator = ModelFileGenerator(project_root)
     click.echo(
         f"{Fore.CYAN}Creating model '{model_name}'...{Style.RESET_ALL}"
     )
-    created_files = generator.generate(model_name)
+    created_files = model_generator.generate(model_name)
+
+    # Workflow generator
+    workflow_generator = WorkflowFileGenerator(project_root)
+    click.echo(
+        f"{Fore.CYAN}Updating workflow jobs...{Style.RESET_ALL}"
+    )
+    workflow_files = workflow_generator.generate(model_name)
+    created_files.extend(workflow_files)
 
     # Report results
     click.echo(
