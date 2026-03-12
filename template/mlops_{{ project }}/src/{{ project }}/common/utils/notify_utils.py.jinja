@@ -1,7 +1,13 @@
 import requests
 
-def send_gchat_failure(webhook_url, environment, project, task, job_name, error_message, run_url):
+from loguru import logger
 
+def send_gchat_failure(webhook_url, environment, project, task, job_name, error_message, run_url):
+    
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+    
     payload = {
         "cardsV2": [
             {
@@ -49,10 +55,16 @@ def send_gchat_failure(webhook_url, environment, project, task, job_name, error_
     response = requests.post(webhook_url, json=payload, timeout=10)
     response.raise_for_status()
 
+    logger.info("🚨 Google Chat failure alert sent successfully")
+
 
 def send_gchat_training_success(webhook_url, environment, project, models, job_name, run_url, experiments_url=None):
 
-    models_bullets = "".join(f"• <i>{model}</i><br>" for model in models)
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    models_bullets = "".join(f"• <i>{model} → {version}</i><br>" for model, version in models.items())
     buttons = [
         {
             "text": "OPEN RUN",
@@ -116,4 +128,4 @@ def send_gchat_training_success(webhook_url, environment, project, models, job_n
     response = requests.post(webhook_url, json=payload, timeout=10)
     response.raise_for_status()
 
-    print("✅ Google Chat success alert sent successfully")
+    logger.info("✅ Google Chat success alert sent successfully")

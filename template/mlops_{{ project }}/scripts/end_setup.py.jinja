@@ -58,18 +58,30 @@ def main(spark):
 
     models_registered_list = []
     models_used_list = []
+    models_and_versions_train = {}
+    models_and_versions_inference = {}
     if args.stage_name == "training":
         models_registered_list = [
             m.strip() for m in args.models_registered.split(",")
             if m.strip() and m.strip().lower() != "none"
         ]
         logger.info(f"Models registered: {models_registered_list}")
+        for model_reg in models_registered_list:
+            spec_model_version = dbutils.jobs.taskValues.get(
+                taskKey=f"{model_reg}_training", key=model_reg
+            )
+            models_and_versions_train[model_reg] = spec_model_version
     elif args.stage_name == "inference":
         models_used_list = [
             m.strip() for m in args.models_used.split(",")
             if m.strip() and m.strip().lower() != "none"
         ]
         logger.info(f"Models used for inference: {models_used_list}")
+        for model_reg in models_used_list:
+            spec_model_version = dbutils.jobs.taskValues.get(
+                taskKey=f"{model_reg}_inference", key=model_reg
+            )
+            models_and_versions_inference[model_reg] = spec_model_version
 
     # load config from TOML based on runtime_env
     env_context = load_project_config(
@@ -100,9 +112,9 @@ def main(spark):
         env_name_notify = runtime_env.upper()
         models_notify = []
         if stage_name == "training":
-            models_notify = models_registered_list
+            models_notify = models_and_versions_train
         elif stage_name == "inference":
-            models_notify = models_used_list
+            models_notify = models_and_versions_inference
         experiment_url = f"{workspace_url}/#mlflow/experiments/{experiment_id}" if experiment_id else None
         
         try:

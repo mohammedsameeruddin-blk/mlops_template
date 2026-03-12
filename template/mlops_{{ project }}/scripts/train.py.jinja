@@ -75,6 +75,8 @@ def main(spark):
         logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
         logger.info("Saving the audit details in `hive_metastore`.")
         audit_table = placeholder_audit_table
+    
+    models_registered_version = None
 
     with mlflow.start_run(
         run_name=f"{model_name}_training" if model_name != "none" else f"training",
@@ -310,13 +312,19 @@ def main(spark):
                             model_input=X_sample,
                             model_output=y_sample
                         )
-                        mlflow.sklearn.log_model(
+                        model_info = mlflow.sklearn.log_model(
                             sk_model=model_results["model"],
                             artifact_path="model",
-                            registered_model_name=func_kwargs["model_registry_name"],
+                            # registered_model_name=func_kwargs["model_registry_name"],
                             signature=signature,
                             input_example=X_sample
                         )
+                        model_reg_info = mlflow.register_model(
+                            model_uri=model_info.model_uri,
+                            name=func_kwargs["model_registry_name"]
+                        )
+                        model_registered_version = model_reg_info.version
+                        logger.info(f"Registered model: {model_reg_info.name} with version: {model_registered_version}")
                         
                         # Log scaler artifact
                         scaler_path = artifacts_dir / "scaler.pkl"
@@ -414,12 +422,13 @@ def main(spark):
                     write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
 
     logger.success("Data splitting/Model training completed successfully.")
-    return experiment_id
+    return experiment_id, model_name, model_registered_version
 
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
     
-    experiment_id = main(spark=spark)
+    experiment_id, model_name, model_registered_version = main(spark=spark)
     dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+    dbutils.jobs.taskValues.set(key=model_name, value=model_registered_version)
