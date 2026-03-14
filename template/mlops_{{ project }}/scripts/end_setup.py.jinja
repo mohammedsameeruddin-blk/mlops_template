@@ -13,7 +13,8 @@ from {{ project }}.common.utils.config_utils import (
 )
 from {{ project }}.common.utils.notify_utils import (
     send_gchat_failure,
-    send_gchat_training_success
+    send_gchat_training_success,
+    send_gchat_inference_success
 )
 
 
@@ -129,7 +130,17 @@ def main(spark):
                     models=models_notify,
                     job_name=job_name,
                     run_url=run_url,
-                    experiments_url=experiment_url
+                    experiment_url=experiment_url
+                )
+            elif stage_name == "inference":
+                send_gchat_inference_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url
                 )
         except Exception as e:
             run_status = "FAILED"

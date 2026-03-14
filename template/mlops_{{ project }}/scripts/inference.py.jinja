@@ -52,7 +52,7 @@ def load_model(model_registry_name: str):
     model_uri = f"models:/{model_registry_name}/{latest_version}"
     logger.info(f"Loading model: {model_uri}")
     
-    return mlflow.sklearn.load_model(model_uri)
+    return mlflow.sklearn.load_model(model_uri), latest_version
 
 
 def get_scaler_pipeline(model_registry_name, pipeline_file, local_path):
@@ -130,6 +130,8 @@ def main(spark):
         logger.info("Saving the audit details in `hive_metastore`.")
         audit_table = placeholder_audit_table
     
+    model_used_version = None
+
     with mlflow.start_run(
         run_name=f"{model_name}_inference" if model_name != "none" else f"inference",
         experiment_id=experiment_id,
@@ -254,7 +256,7 @@ def main(spark):
                         )
 
                         # Load the model and data
-                        model = load_model(model_registry_name=model_registry_name)
+                        model, model_used_version = load_model(model_registry_name=model_registry_name)
                         input_file_path = base_output_dir / source_info["data"].lstrip("/")
                         input_df = load_data_from_file(spark=spark, file_path=input_file_path)
 
@@ -316,12 +318,13 @@ def main(spark):
                     write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
     
     logger.success("Input data preparation/Model inferencing completed successfully.")
-    return experiment_id
+    return experiment_id, model_name, model_used_version
 
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
     
-    experiment_id = main(spark=spark)
+    experiment_id, model_name, model_used_version = main(spark=spark)
     dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+    dbutils.jobs.taskValues.set(key=model_name, value=model_used_version)
