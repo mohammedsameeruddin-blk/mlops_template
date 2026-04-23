@@ -76,7 +76,7 @@ def main(spark):
         logger.info("Saving the audit details in `hive_metastore`.")
         audit_table = placeholder_audit_table
     
-    models_registered_version = None
+    model_registered_version = None
 
     with mlflow.start_run(
         run_name=f"{model_name}_training" if model_name != "none" else f"training",
@@ -115,6 +115,7 @@ def main(spark):
                     func_kwargs = func_conf["kwargs"]
 
                     if action_name == "train_test_split":
+                        model_registered_version = None
                         target_type = func_kwargs.get("target_data_type")
                         target_info = func_kwargs["outputs"]["file"]
                         source_type = func_kwargs["source_data_type"]
@@ -155,6 +156,7 @@ def main(spark):
                             test_df.to_csv(test_data_path, index=False)
                     
                     if action_name == "hyperparameter_tuning":
+                        model_registered_version = None
                         source_info = func_kwargs["inputs"]["file"]
                         train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
@@ -191,6 +193,7 @@ def main(spark):
                         mlflow.log_artifact(local_path=str(tuning_results_path))
                     
                     if action_name == "model_evaluation":
+                        model_registered_version = None
                         source_info = func_kwargs["inputs"]["file"]
                         train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
