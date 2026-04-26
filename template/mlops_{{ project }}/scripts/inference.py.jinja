@@ -246,7 +246,7 @@ def main(spark):
                             log_params_with_prefix(params=target_info, prefix="target.file")
                         
                         # Download the scaler object
-                        pl_output_path = base_output_dir / "data"
+                        pl_output_path = base_output_dir / "data" / model_name
                         pl_output_path.mkdir(parents=True, exist_ok=True)
                         source_info = func_kwargs["inputs"]["file"]
                         get_scaler_pipeline(
