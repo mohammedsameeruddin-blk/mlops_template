@@ -19,6 +19,7 @@ from {{ project }}.common.utils.config_utils import (
 )
 from {{ project }}.common.utils.notify_utils import send_gchat_failure
 from {{ project }}.common.utils.audit_utils import write_to_audit_table
+from {{ project }}.common.model.explainability import model_explain
 
 
 def load_class(class_path: str):
@@ -371,6 +372,35 @@ def main(spark):
                                 f"No *_features.pkl files found in {features_base_path}"
                             )
                     
+                        # Model explainability
+                        if func_kwargs.get("include_model_explainability", False):
+                            logger.info("Generating model explainability plots...")
+                            model_explain(
+                                model=model_results["model"],
+                                train_data=model_results["X_train"],
+                                test_data=model_results["X_test"],
+                                file_name=str(artifacts_dir / "feature_importance.png"),
+                                file_name1=str(artifacts_dir / "global_feature_importance.png"),
+                                file_name2=str(artifacts_dir / "local_feature_importance.png"),
+                                file_name3=str(artifacts_dir / "individual_explainability.png")
+                            )
+                            mlflow.log_artifact(
+                                local_path=artifacts_dir / "feature_importance.png",
+                                artifact_path="model/explainability/"
+                            )
+                            mlflow.log_artifact(
+                                local_path=artifacts_dir / "global_feature_importance.png",
+                                artifact_path="model/explainability/"
+                            )
+                            mlflow.log_artifact(
+                                local_path=artifacts_dir / "local_feature_importance.png",
+                                artifact_path="model/explainability/"
+                            )
+                            mlflow.log_artifact(
+                                local_path=artifacts_dir / "individual_explainability.png",
+                                artifact_path="model/explainability/"
+                            )
+
                     if action_name == "log_experiment_details":
                         cls(
                             spark=spark,

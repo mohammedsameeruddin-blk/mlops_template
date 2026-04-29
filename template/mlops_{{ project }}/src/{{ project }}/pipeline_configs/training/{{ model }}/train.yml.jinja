@@ -50,6 +50,7 @@ actions:
         process_name: {{ model }}_training
         source_data_type: file
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+        include_model_explainability: true # true/false - whether to include model explainability in the training process. If true, the training function should return the explainability artifacts which will be stored in the model registry along with the model.
         inputs:
           # currently supports file/databricks_table
           file:
