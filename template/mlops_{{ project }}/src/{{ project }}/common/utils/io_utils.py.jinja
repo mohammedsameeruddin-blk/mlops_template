@@ -2,15 +2,11 @@ import os
 import shutil
 import json
 import mlflow
-import pandas as pd
-
 from datetime import datetime
 from pyspark.sql.types import (
     StructType,
     StructField,
     StringType,
-    DoubleType,
-    TimestampType,
 )
 from pyspark.sql.functions import col
 from loguru import logger
@@ -93,7 +89,7 @@ def cleanup_pipeline_setup(spark, func_conf):
         try:
             shutil.rmtree(project_output_path)
             logger.info(f"Cleaned-up the project output folder - `{project_output_path}`")
-        except:
+        except Exception:
             pass
 
         return True

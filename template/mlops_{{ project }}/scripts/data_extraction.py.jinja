@@ -1,5 +1,4 @@
 import importlib
-import os
 import mlflow
 import argparse
 from datetime import datetime
@@ -46,7 +45,6 @@ def main(spark):
     parser.add_argument("--experiment_id", required=True)
 
     args = parser.parse_args()
-    root_path = args.root_path
     runtime_env = args.runtime_env.lower()
     yml_task = args.yml_task
     project_name = args.project_name

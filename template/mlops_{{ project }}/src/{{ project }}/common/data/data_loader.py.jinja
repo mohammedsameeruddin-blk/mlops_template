@@ -11,7 +11,7 @@ def data_helper(spark, config):
         logger.info(f"Table read successfully - `{table_name}`.")
         flag = True
     else:
-        message = f"Supports only `databricks_table` as of now."
+        message = "Supports only `databricks_table` as of now."
         logger.error(message)
         raise ValueError(message)
     

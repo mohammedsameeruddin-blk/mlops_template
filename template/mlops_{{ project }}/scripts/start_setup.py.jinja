@@ -1,5 +1,4 @@
 import importlib
-import os
 import mlflow
 import argparse
 from pathlib import Path
@@ -69,7 +68,6 @@ def main(spark):
     model_name = args.model_name
     stage_name = args.stage_name
     task_key = args.task_key
-    task_run_id = args.task_run_id
     job_name = args.job_name
     job_id = args.job_id
     job_run_id = args.job_run_id
@@ -102,8 +100,6 @@ def main(spark):
 
         logger.info(f"Starting action: {action_name}")
 
-        start_time = datetime.now()
-        run_status = ""
         error_details = ""
 
         workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
@@ -112,10 +108,8 @@ def main(spark):
 
         try:
             # assumes 'spark' is provided by Databricks environment
-            result = cls(spark=spark, func_conf=func_conf)
-            run_status = "SUCCESS"
+            cls(spark=spark, func_conf=func_conf)
         except Exception as e:
-            run_status = "FAILED"
             error_details = str(e)[:500]
             logger.error(f"Action failed: {action_name}")
             send_gchat_failure(
@@ -128,9 +122,6 @@ def main(spark):
                 run_url=run_url
             )
         finally:
-            end_time = datetime.now()
-            duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)
-
             logger.success(f"Started the setup for {stage_name}; {project_name}")
     
     return experiment_id

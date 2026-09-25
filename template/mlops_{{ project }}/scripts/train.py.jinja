@@ -82,7 +82,7 @@ def main(spark):
     model_registered_version = None
 
     with mlflow.start_run(
-        run_name=f"{model_name}_training" if model_name != "none" else f"training",
+        run_name=f"{model_name}_training" if model_name != "none" else "training",
         experiment_id=experiment_id,
         nested=True
     ):
@@ -139,7 +139,7 @@ def main(spark):
                             merged_output_path.mkdir(parents=True, exist_ok=True)
                             merged_data_path = base_output_dir / target_info["merged"].lstrip("/")
                             logger.info(f"Writing merged data output to {merged_output_path}")
-                            mlflow.log_param(key=f"target_merged_file_path", value=merged_data_path)
+                            mlflow.log_param(key="target_merged_file_path", value=merged_data_path)
                             merged_df.to_csv(merged_data_path, index=False)
 
                             train_output_dir = "/".join(target_info["train"].split("/")[:-1]).lstrip("/")
@@ -147,7 +147,7 @@ def main(spark):
                             train_output_path.mkdir(parents=True, exist_ok=True)
                             train_data_path = base_output_dir / target_info["train"].lstrip("/")
                             logger.info(f"Writing train data output to {train_output_path}")
-                            mlflow.log_param(key=f"target_train_file_path", value=train_data_path)
+                            mlflow.log_param(key="target_train_file_path", value=train_data_path)
                             train_df.to_csv(train_data_path, index=False)
 
                             test_output_dir = "/".join(target_info["test"].split("/")[:-1]).lstrip("/")
@@ -155,7 +155,7 @@ def main(spark):
                             test_output_path.mkdir(parents=True, exist_ok=True)
                             test_data_path = base_output_dir / target_info["test"].lstrip("/")
                             logger.info(f"Writing test data output to {test_output_path}")
-                            mlflow.log_param(key=f"target_test_file_path", value=test_data_path)
+                            mlflow.log_param(key="target_test_file_path", value=test_data_path)
                             test_df.to_csv(test_data_path, index=False)
                     
                     if action_name == "hyperparameter_tuning":
@@ -171,7 +171,7 @@ def main(spark):
                                 run_name=f"{mname}_hyperopt",
                                 experiment_id=experiment_id,
                                 nested=True
-                            ) as model_run:
+                            ):
 
                                 # Best params of the model after all the trials
                                 mlflow.log_params(params=result["best_params"])
@@ -215,7 +215,7 @@ def main(spark):
                                 run_name=f"{mname}_evaluation",
                                 experiment_id=experiment_id,
                                 nested=True
-                            ) as model_run:
+                            ):
                                 
                                 # Best params of the model after all the trials
                                 mlflow.log_params(params=result["best_params"])

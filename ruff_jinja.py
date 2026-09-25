@@ -38,6 +38,7 @@ def check(filepath: str) -> int:
 
 
 if __name__ == "__main__":
+    # run: python ruff_jinja.py "template/**/*.py.jinja"
     if len(sys.argv) < 2:
         print("Usage: python ruff_jinja.py <file.py.jinja|glob> [...]")
         sys.exit(1)

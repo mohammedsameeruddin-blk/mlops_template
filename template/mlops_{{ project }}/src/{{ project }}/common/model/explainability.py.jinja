@@ -67,5 +67,5 @@ def model_explain(model, train_data, test_data, file_name, file_name1, file_name
         shap.waterfall_plot(shap_values[0], show=False) #not applicable for linear model
         plt.savefig(file_name3, bbox_inches='tight')
         plt.clf()
-    except:
+    except Exception:
         pass

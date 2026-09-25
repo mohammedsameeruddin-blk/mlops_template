@@ -174,7 +174,7 @@ def main(spark):
                         output_path.mkdir(parents=True, exist_ok=True)
                         features_data_path = base_output_dir / target_info["data"].lstrip("/")
                         logger.info(f"Writing data output to {output_path}")
-                        mlflow.log_param(key=f"target_file_path", value=features_data_path)
+                        mlflow.log_param(key="target_file_path", value=features_data_path)
                         output_df.to_csv(features_data_path, index=False)
 
                         ## write as feature store
@@ -198,7 +198,7 @@ def main(spark):
                         pl_output_path.mkdir(parents=True, exist_ok=True)
                         pipeline_data_path = base_output_dir / target_info["pipeline"].lstrip("/")
                         logger.info(f"Writing pipeline output to {pipeline_data_path}")
-                        mlflow.log_param(key=f"target_pipeline_path", value=pipeline_data_path)
+                        mlflow.log_param(key="target_pipeline_path", value=pipeline_data_path)
                         pipeline_file_name = Path(target_info["pipeline"]).name
                         mlflow.log_param(key="featurization_pipeline_file", value=pipeline_file_name)
                         mlflow.set_tag(key="artifact_role", value="training_featurization")

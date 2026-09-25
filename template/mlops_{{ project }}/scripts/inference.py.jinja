@@ -133,7 +133,7 @@ def main(spark):
     model_used_version = None
 
     with mlflow.start_run(
-        run_name=f"{model_name}_inference" if model_name != "none" else f"inference",
+        run_name=f"{model_name}_inference" if model_name != "none" else "inference",
         experiment_id=experiment_id,
         nested=True
     ):
@@ -168,6 +168,8 @@ def main(spark):
                 
                 try:
                     func_kwargs = func_conf["kwargs"]
+                    target_type = func_kwargs.get("target_data_type")
+                    target_table = func_kwargs["outputs"]["databricks_table"]
 
                     if action_name == "prepare_input_data":
                         # Source logging
@@ -178,7 +180,6 @@ def main(spark):
                         )
                         
                         # Target logging
-                        target_type = func_kwargs.get("target_data_type")
                         mlflow.log_param(
                             key="target_data_type",
                             value=target_type,
@@ -209,7 +210,7 @@ def main(spark):
                             output_path.mkdir(parents=True, exist_ok=True)
                             merge_data_path = base_output_dir / target_info["data"].lstrip("/")
                             logger.info(f"Writing data output to {output_path}")
-                            mlflow.log_param(key=f"target_file_path", value=merge_data_path)
+                            mlflow.log_param(key="target_file_path", value=merge_data_path)
                             merged_df.to_csv(merge_data_path, index=False)
                         else:
                             pass
@@ -229,8 +230,6 @@ def main(spark):
                         )
                         
                         # Target logging
-                        target_type = func_kwargs.get("target_data_type")
-                        target_table = func_kwargs["outputs"]["databricks_table"]
                         mlflow.log_param(
                             key="target_data_type",
                             value=target_type,
@@ -244,7 +243,7 @@ def main(spark):
                             # file
                             target_info = func_kwargs["outputs"]["file"]
                             log_params_with_prefix(params=target_info, prefix="target.file")
-                        
+
                         # Download the scaler object
                         pl_output_path = base_output_dir / "models" / model_name
                         pl_output_path.mkdir(parents=True, exist_ok=True)

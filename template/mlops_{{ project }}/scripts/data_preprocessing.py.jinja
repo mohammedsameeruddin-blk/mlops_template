@@ -170,7 +170,7 @@ def main(spark):
                         output_path.mkdir(parents=True, exist_ok=True)
                         preprocess_path = base_output_dir / target_info["data"].lstrip("/")
                         logger.info(f"Writing output to {output_path}")
-                        mlflow.log_param(key=f"target_file_path", value=preprocess_path)
+                        mlflow.log_param(key="target_file_path", value=preprocess_path)
                         output_df.to_csv(preprocess_path, index=False)
                     else:
                         # databricks_table

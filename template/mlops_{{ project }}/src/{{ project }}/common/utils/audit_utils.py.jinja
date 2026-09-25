@@ -1,14 +1,7 @@
-import os
-import shutil
-import json
-import pandas as pd
-
 from pyspark.sql.types import (
     StructType,
     StructField,
     StringType,
-    DoubleType,
-    TimestampType,
 )
 from pyspark.sql.functions import col
 from loguru import logger
@@ -18,7 +11,7 @@ def is_table_exists(spark, table_name):
     try:
         spark.table(table_name)
         return True
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -96,7 +89,7 @@ def write_to_audit_table(spark, audit_metrics, func_conf, audit_table=None):
         logger.info(f"Audit metrics appended successfully - `{audit_table}`.")
     else:
         logger.warning(
-            f"No metrics found to append."
+            "No metrics found to append."
         )
 
     return True
