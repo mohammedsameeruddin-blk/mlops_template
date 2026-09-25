@@ -49,7 +49,9 @@ def setup_project_audit_table(spark, func_conf):
     else:
         logger.info(f"Table '{audit_table_name}' does not exist. Creating table.")
         audit_df = spark.createDataFrame([], audit_schema)
-        audit_df.write.format("delta").mode("overwrite").saveAsTable(f"{audit_table_name}")
+        audit_df.write.format("delta").mode("overwrite").saveAsTable(
+            f"{audit_table_name}"
+        )
 
     return True
 
@@ -88,8 +90,6 @@ def write_to_audit_table(spark, audit_metrics, func_conf, audit_table=None):
         df.write.mode("append").saveAsTable(audit_table)
         logger.info(f"Audit metrics appended successfully - `{audit_table}`.")
     else:
-        logger.warning(
-            "No metrics found to append."
-        )
+        logger.warning("No metrics found to append.")
 
     return True

@@ -2,12 +2,14 @@ import requests
 
 from loguru import logger
 
-def send_gchat_failure(webhook_url, environment, project, task, job_name, error_message, run_url):
-    
+
+def send_gchat_failure(
+    webhook_url, environment, project, task, job_name, error_message, run_url
+):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
         return
-    
+
     payload = {
         "cardsV2": [
             {
@@ -15,7 +17,7 @@ def send_gchat_failure(webhook_url, environment, project, task, job_name, error_
                 "card": {
                     "header": {
                         "title": "🚨 Databricks Job Failed",
-                        "subtitle": f"Environment: {environment}"
+                        "subtitle": f"Environment: {environment}",
                     },
                     "sections": [
                         {
@@ -23,9 +25,9 @@ def send_gchat_failure(webhook_url, environment, project, task, job_name, error_
                                 {
                                     "textParagraph": {
                                         "text": f"<b>Project:</b> {project}<br>"
-                                                f"\n<b>Task:</b> {task}<br>"
-                                                f"\n<b>Job:</b> {job_name}<br>"
-                                                f"\n<b>Error:</b> {error_message}"
+                                        f"\n<b>Task:</b> {task}<br>"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Error:</b> {error_message}"
                                     }
                                 }
                             ]
@@ -39,15 +41,15 @@ def send_gchat_failure(webhook_url, environment, project, task, job_name, error_
                                                 "text": "Open Run",
                                                 "onClick": {
                                                     "openLink": {"url": run_url}
-                                                }
+                                                },
                                             }
                                         ]
                                     }
                                 }
                             ]
-                        }
-                    ]
-                }
+                        },
+                    ],
+                },
             }
         ]
     }
@@ -57,32 +59,23 @@ def send_gchat_failure(webhook_url, environment, project, task, job_name, error_
 
     logger.info("🚨 Google Chat failure alert sent successfully")
 
-def send_gchat_inference_success(webhook_url, environment, project, models, job_name, run_url, experiment_url=None):
 
+def send_gchat_inference_success(
+    webhook_url, environment, project, models, job_name, run_url, experiment_url=None
+):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
         return
-    
-    models_bullets = "".join(f"• <i>{model} → {version}</i><br>" for model, version in models.items())
-    buttons = [
-        {
-            "text": "Open Run",
-            "onClick": {
-                "openLink": {
-                    "url": run_url
-                }
-            }
-        }
-    ]
+
+    models_bullets = "".join(
+        f"• <i>{model} → {version}</i><br>" for model, version in models.items()
+    )
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
     if experiment_url:
         buttons.append(
             {
                 "text": "Open Experiment",
-                "onClick": {
-                    "openLink": {
-                        "url": experiment_url
-                    }
-                }
+                "onClick": {"openLink": {"url": experiment_url}},
             }
         )
 
@@ -93,7 +86,7 @@ def send_gchat_inference_success(webhook_url, environment, project, models, job_
                 "card": {
                     "header": {
                         "title": "✅ Inference Job Succeeded",
-                        "subtitle": f"Environment: {environment}"
+                        "subtitle": f"Environment: {environment}",
                     },
                     "sections": [
                         {
@@ -101,25 +94,17 @@ def send_gchat_inference_success(webhook_url, environment, project, models, job_
                                 {
                                     "textParagraph": {
                                         "text": f"<b>Project:</b> {project}<br>"
-                                                f"\n<b>Models Used:</b><br>"
-                                                f"{models_bullets}"
-                                                f"\n<b>Job:</b> {job_name}<br>"
-                                                f"\n<b>Status:</b> SUCCESS"
+                                        f"\n<b>Models Used:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
                                     }
                                 }
                             ]
                         },
-                        {
-                            "widgets": [
-                                {
-                                    "buttonList": {
-                                        "buttons": buttons
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                }
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
             }
         ]
     }
@@ -129,32 +114,30 @@ def send_gchat_inference_success(webhook_url, environment, project, models, job_
 
     logger.info("✅ Google Chat inference success alert sent successfully")
 
-def send_gchat_training_success(webhook_url, stage_name, environment, project, models, job_name, run_url, experiment_url=None):
 
+def send_gchat_training_success(
+    webhook_url,
+    stage_name,
+    environment,
+    project,
+    models,
+    job_name,
+    run_url,
+    experiment_url=None,
+):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
         return
 
-    models_bullets = "".join(f"• <i>{model} → {version}</i><br>" for model, version in models.items())
-    buttons = [
-        {
-            "text": "Open Run",
-            "onClick": {
-                "openLink": {
-                    "url": run_url
-                }
-            }
-        }
-    ]
+    models_bullets = "".join(
+        f"• <i>{model} → {version}</i><br>" for model, version in models.items()
+    )
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
     if experiment_url:
         buttons.append(
             {
                 "text": "Open Experiment",
-                "onClick": {
-                    "openLink": {
-                        "url": experiment_url
-                    }
-                }
+                "onClick": {"openLink": {"url": experiment_url}},
             }
         )
 
@@ -165,7 +148,7 @@ def send_gchat_training_success(webhook_url, stage_name, environment, project, m
                 "card": {
                     "header": {
                         "title": f"✅ {stage_name.capitalize()} Job Succeeded",
-                        "subtitle": f"Environment: {environment}"
+                        "subtitle": f"Environment: {environment}",
                     },
                     "sections": [
                         {
@@ -173,25 +156,17 @@ def send_gchat_training_success(webhook_url, stage_name, environment, project, m
                                 {
                                     "textParagraph": {
                                         "text": f"<b>Project:</b> {project}<br>"
-                                                f"\n<b>Models Registered:</b><br>"
-                                                f"{models_bullets}"
-                                                f"\n<b>Job:</b> {job_name}<br>"
-                                                f"\n<b>Status:</b> SUCCESS"
+                                        f"\n<b>Models Registered:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
                                     }
                                 }
                             ]
                         },
-                        {
-                            "widgets": [
-                                {
-                                    "buttonList": {
-                                        "buttons": buttons
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                }
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
             }
         ]
     }

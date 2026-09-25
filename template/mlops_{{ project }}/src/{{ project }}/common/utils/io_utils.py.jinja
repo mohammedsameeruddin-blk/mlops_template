@@ -33,7 +33,7 @@ def setup_project_output_path(spark, func_conf):
         )
 
         return True
-    
+
     logger.warning("No volumes path provided.")
 
 
@@ -88,12 +88,14 @@ def cleanup_pipeline_setup(spark, func_conf):
 
         try:
             shutil.rmtree(project_output_path)
-            logger.info(f"Cleaned-up the project output folder - `{project_output_path}`")
+            logger.info(
+                f"Cleaned-up the project output folder - `{project_output_path}`"
+            )
         except Exception:
             pass
 
         return True
-    
+
     logger.warning("No volumes path provided.")
 
 
@@ -113,16 +115,17 @@ def log_experiment_details(spark, experiment_id, model_name, stage_name, func_co
                 experiment_name,
                 model_name,
                 stage_name,
-                insert_update_timestamp
+                insert_update_timestamp,
             )
         ],
-        ["experiment_id", "experiment_name", "model_name", "stage_name", "insert_update_timestamp"]
+        [
+            "experiment_id",
+            "experiment_name",
+            "model_name",
+            "stage_name",
+            "insert_update_timestamp",
+        ],
     )
 
-    (
-        df.write
-        .format("delta")
-        .mode("append")
-        .saveAsTable(table_name)
-    )
+    (df.write.format("delta").mode("append").saveAsTable(table_name))
     logger.info(f"Logged experiment details to {table_name} successfully.")

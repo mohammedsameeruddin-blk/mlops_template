@@ -2,6 +2,7 @@ from databricks.feature_store import FeatureStoreClient
 from loguru import logger
 import mlflow
 
+
 def feature_table_exists(fs, table_name):
     try:
         fs.get_table(table_name)
@@ -13,8 +14,7 @@ def feature_table_exists(fs, table_name):
 def fetch_latest_feature_version(spark, table_name):
     history_df = spark.sql(f"DESCRIBE HISTORY {table_name}")
     return (
-        history_df
-        .orderBy("version", ascending=False)
+        history_df.orderBy("version", ascending=False)
         .limit(1)
         .select("version")
         .collect()[0]
@@ -32,15 +32,15 @@ def create_or_update_feature_data(spark, full_table_name, primary_key, spark_df)
             df=spark_df,
         )
     else:
-        fs.write_table(
-            name=full_table_name,
-            df=spark_df,
-            mode="merge"
-        )
-    
-    feature_version = fetch_latest_feature_version(spark=spark, table_name=full_table_name)
-    logger.info(f"Feature data created/updated successfully. Feature version is {feature_version}")
-    
+        fs.write_table(name=full_table_name, df=spark_df, mode="merge")
+
+    feature_version = fetch_latest_feature_version(
+        spark=spark, table_name=full_table_name
+    )
+    logger.info(
+        f"Feature data created/updated successfully. Feature version is {feature_version}"
+    )
+
     return full_table_name, feature_version
 
 
@@ -67,8 +67,6 @@ def get_data_feature_version(experiment_id, run_name):
     }
 
     if "feature_version" not in params_dict:
-        raise KeyError(
-            f"`feature_version` param not found in run '{run_name}'"
-        )
+        raise KeyError(f"`feature_version` param not found in run '{run_name}'")
 
     return params_dict["feature_version"]

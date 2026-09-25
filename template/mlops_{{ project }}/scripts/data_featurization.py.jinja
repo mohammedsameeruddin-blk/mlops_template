@@ -14,8 +14,8 @@ from pyspark.dbutils import DBUtils
 
 from {{ project }}.common.utils.feature_utils import create_or_update_feature_data
 from {{ project }}.common.utils.config_utils import (
-    load_project_config, 
-    load_task_config
+    load_project_config,
+    load_task_config,
 )
 from {{ project }}.common.utils.notify_utils import send_gchat_failure
 from {{ project }}.common.utils.audit_utils import write_to_audit_table
@@ -29,16 +29,12 @@ def load_class(class_path: str):
 
 def load_data_from_file(spark, file_path):
     logger.info(f"Loading data from file: {file_path}")
-    df = pd.read_csv(file_path, sep=',')
+    df = pd.read_csv(file_path, sep=",")
     return df
 
 
 def log_params_with_prefix(params: dict, prefix: str):
-    mlflow.log_params({
-        f"{prefix}.{k}": v
-        for k, v in params.items()
-        if v is not None
-    })
+    mlflow.log_params({f"{prefix}.{k}": v for k, v in params.items() if v is not None})
 
 
 def main(spark):
@@ -91,9 +87,7 @@ def main(spark):
         audit_table = placeholder_audit_table
 
     with mlflow.start_run(
-        run_name="data_featurization",
-        experiment_id=experiment_id,
-        nested=True
+        run_name="data_featurization", experiment_id=experiment_id, nested=True
     ):
         actions_config = task_config.get("actions", [])
         for action in actions_config:
@@ -115,14 +109,12 @@ def main(spark):
             env_name_notify = runtime_env.upper()
 
             with mlflow.start_run(
-                run_name=action_name,
-                experiment_id=experiment_id,
-                nested=True
+                run_name=action_name, experiment_id=experiment_id, nested=True
             ):
                 try:
                     cls = load_class(func_conf["class_path"])
                     func_kwargs = func_conf["kwargs"]
-                    
+
                     # Source logging
                     source_type = func_kwargs.get("source_data_type")
                     mlflow.log_param(
@@ -143,7 +135,7 @@ def main(spark):
                         )
                         df = load_data_from_file(spark=spark, file_path=input_path)
                         log_params_with_prefix(params=source_info, prefix="source.file")
-                    
+
                     # Target logging
                     target_type = func_kwargs.get("target_data_type")
                     mlflow.log_param(
@@ -168,13 +160,19 @@ def main(spark):
                         # TODO: output should always be csv, but we can extend this later
                         base_output_dir = os.path.join(root_path, stage_name)
                         base_output_dir = Path(base_output_dir)
-                        
-                        file_output_dir = "/".join(target_info["data"].split("/")[:-1]).lstrip("/")
+
+                        file_output_dir = "/".join(
+                            target_info["data"].split("/")[:-1]
+                        ).lstrip("/")
                         output_path = base_output_dir / file_output_dir
                         output_path.mkdir(parents=True, exist_ok=True)
-                        features_data_path = base_output_dir / target_info["data"].lstrip("/")
+                        features_data_path = base_output_dir / target_info[
+                            "data"
+                        ].lstrip("/")
                         logger.info(f"Writing data output to {output_path}")
-                        mlflow.log_param(key="target_file_path", value=features_data_path)
+                        mlflow.log_param(
+                            key="target_file_path", value=features_data_path
+                        )
                         output_df.to_csv(features_data_path, index=False)
 
                         ## write as feature store
@@ -182,31 +180,43 @@ def main(spark):
                         feature_info = func_kwargs["outputs"]["databricks_table"]
                         full_table_name = feature_info["feature_store"]
                         primary_key = feature_info["primary_key"]
-                        feature_store_table, feature_version = create_or_update_feature_data(
-                            spark=spark,
-                            full_table_name=full_table_name,
-                            primary_key=primary_key,
-                            spark_df=spark_df
+                        feature_store_table, feature_version = (
+                            create_or_update_feature_data(
+                                spark=spark,
+                                full_table_name=full_table_name,
+                                primary_key=primary_key,
+                                spark_df=spark_df,
+                            )
                         )
                         mlflow.log_param(key="feature_version", value=feature_version)
-                        mlflow.log_param(key="feature_store_table", value=feature_store_table)
+                        mlflow.log_param(
+                            key="feature_store_table", value=feature_store_table
+                        )
 
                         pipeline_output_dir = "/".join(
                             target_info["pipeline"].split("/")[:-1]
                         ).lstrip("/")
                         pl_output_path = base_output_dir / pipeline_output_dir
                         pl_output_path.mkdir(parents=True, exist_ok=True)
-                        pipeline_data_path = base_output_dir / target_info["pipeline"].lstrip("/")
+                        pipeline_data_path = base_output_dir / target_info[
+                            "pipeline"
+                        ].lstrip("/")
                         logger.info(f"Writing pipeline output to {pipeline_data_path}")
-                        mlflow.log_param(key="target_pipeline_path", value=pipeline_data_path)
+                        mlflow.log_param(
+                            key="target_pipeline_path", value=pipeline_data_path
+                        )
                         pipeline_file_name = Path(target_info["pipeline"]).name
-                        mlflow.log_param(key="featurization_pipeline_file", value=pipeline_file_name)
-                        mlflow.set_tag(key="artifact_role", value="training_featurization")
+                        mlflow.log_param(
+                            key="featurization_pipeline_file", value=pipeline_file_name
+                        )
+                        mlflow.set_tag(
+                            key="artifact_role", value="training_featurization"
+                        )
                         joblib.dump(feature_pipeline, pipeline_data_path)
                         mlflow.log_artifact(
                             local_path=pipeline_data_path, artifact_path="featurization"
                         )
-                    
+
                     run_status = "SUCCESS"
                 except Exception as e:
                     run_status = "FAILED"
@@ -219,13 +229,15 @@ def main(spark):
                         task=task_key,
                         job_name=job_name,
                         error_message=error_details,
-                        run_url=run_url
+                        run_url=run_url,
                     )
                     raise
 
                 finally:
                     end_time = datetime.now()
-                    duration_minutes = round((end_time - start_time).total_seconds() / 60, 2)
+                    duration_minutes = round(
+                        (end_time - start_time).total_seconds() / 60, 2
+                    )
 
                     mlflow.log_metric("duration_minutes", duration_minutes)
                     mlflow.set_tag("run_status", run_status)
@@ -244,7 +256,7 @@ def main(spark):
                         start_time=str(start_time),
                         end_time=str(end_time),
                         duration_mins=str(duration_minutes),
-                        error_details=error_details
+                        error_details=error_details,
                     )
                     logger.info(
                         f"Action {action_name} finished | Status={run_status} | Duration={duration_minutes} min"
@@ -258,6 +270,6 @@ def main(spark):
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
     dbutils = DBUtils(spark)
-    
+
     experiment_id = main(spark=spark)
     dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)

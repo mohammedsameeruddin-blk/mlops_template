@@ -7,12 +7,12 @@ from loguru import logger
 
 from {{ project }}.common.utils.config_utils import (
     load_project_config,
-    load_task_config
+    load_task_config,
 )
 from {{ project }}.common.utils.notify_utils import (
     send_gchat_failure,
     send_gchat_training_success,
-    send_gchat_inference_success
+    send_gchat_inference_success,
 )
 
 
@@ -60,7 +60,8 @@ def main(spark):
     models_and_versions_retrain = {}
     if args.stage_name == "training":
         models_registered_list = [
-            m.strip() for m in args.models_registered.split(",")
+            m.strip()
+            for m in args.models_registered.split(",")
             if m.strip() and m.strip().lower() != "none"
         ]
         logger.info(f"Models registered: {models_registered_list}")
@@ -71,7 +72,8 @@ def main(spark):
             models_and_versions_train[model_reg] = spec_model_version
     elif args.stage_name == "inference":
         models_used_list = [
-            m.strip() for m in args.models_used.split(",")
+            m.strip()
+            for m in args.models_used.split(",")
             if m.strip() and m.strip().lower() != "none"
         ]
         logger.info(f"Models used for inference: {models_used_list}")
@@ -82,7 +84,8 @@ def main(spark):
             models_and_versions_inference[model_reg] = spec_model_version
     elif args.stage_name == "retraining":
         models_registered_list = [
-            m.strip() for m in args.models_registered.split(",")
+            m.strip()
+            for m in args.models_registered.split(",")
             if m.strip() and m.strip().lower() != "none"
         ]
         logger.info(f"Models registered: {models_registered_list}")
@@ -93,15 +96,17 @@ def main(spark):
             models_and_versions_retrain[model_reg] = spec_model_version
 
     # load config from TOML based on runtime_env
-    env_context = load_project_config(
-        project_name=project_name, env_name=runtime_env
-    )
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
     if not env_context:
         raise ValueError(f"Environment '{runtime_env}' not found in config.toml")
 
     # load and render task YAML
     task_config = load_task_config(
-        project_name=project_name, model_name=model_name, stage_name=stage_name, env_context=env_context, which_file=yml_task
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
     )
     actions_config = task_config.get("actions", [])
 
@@ -124,8 +129,12 @@ def main(spark):
             models_notify = models_and_versions_inference
         elif stage_name == "retraining":
             models_notify = models_and_versions_retrain
-        experiment_url = f"{workspace_url}/#mlflow/experiments/{experiment_id}" if experiment_id else None
-        
+        experiment_url = (
+            f"{workspace_url}/#mlflow/experiments/{experiment_id}"
+            if experiment_id
+            else None
+        )
+
         try:
             # assumes 'spark' is provided by Databricks environment
             cls(spark=spark, func_conf=func_conf)
@@ -138,7 +147,7 @@ def main(spark):
                     models=models_notify,
                     job_name=job_name,
                     run_url=run_url,
-                    experiment_url=experiment_url
+                    experiment_url=experiment_url,
                 )
             elif stage_name == "inference":
                 send_gchat_inference_success(
@@ -148,7 +157,7 @@ def main(spark):
                     models=models_notify,
                     job_name=job_name,
                     run_url=run_url,
-                    experiment_url=experiment_url
+                    experiment_url=experiment_url,
                 )
             elif stage_name == "retraining":
                 send_gchat_training_success(
@@ -159,7 +168,7 @@ def main(spark):
                     models=models_notify,
                     job_name=job_name,
                     run_url=run_url,
-                    experiment_url=experiment_url
+                    experiment_url=experiment_url,
                 )
         except Exception as e:
             error_details = str(e)[:500]
@@ -171,12 +180,12 @@ def main(spark):
                 task=task_key,
                 job_name=job_name,
                 error_message=error_details,
-                run_url=run_url
+                run_url=run_url,
             )
             raise
         finally:
             logger.success(f"Ended the setup for {stage_name}; {project_name}")
-    
+
     return experiment_id, models_notify
 
 

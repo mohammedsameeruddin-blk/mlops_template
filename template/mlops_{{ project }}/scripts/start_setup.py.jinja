@@ -10,7 +10,7 @@ from loguru import logger
 
 from {{ project }}.common.utils.config_utils import (
     load_project_config,
-    load_task_config
+    load_task_config,
 )
 from {{ project }}.common.utils.notify_utils import send_gchat_failure
 
@@ -21,11 +21,7 @@ def load_class(class_path: str):
     return getattr(module, class_name)
 
 
-def set_mlflow_experiment(
-    root_path,
-    stage_name,
-    experiment_name
-):
+def set_mlflow_experiment(root_path, stage_name, experiment_name):
     experiment_name = f"{root_path}/{stage_name}/experiments/{experiment_name}"
     experiment_path = Path(f"{root_path}/{stage_name}/experiments")
     experiment_path.mkdir(parents=True, exist_ok=True)
@@ -73,20 +69,22 @@ def main(spark):
     job_run_id = args.job_run_id
 
     # load config from TOML based on runtime_env
-    env_context = load_project_config(
-        project_name=project_name, env_name=runtime_env
-    )
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
     if not env_context:
         raise ValueError(f"Environment '{runtime_env}' not found in config.toml")
 
     # load and render task YAML
     task_config = load_task_config(
-        project_name=project_name, model_name=model_name, stage_name=stage_name, env_context=env_context, which_file=yml_task
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
     )
     actions_config = task_config.get("actions", [])
 
     formatted_string = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    experiment_name = f'MLOps_{task_config["mlflow_experiment_name"]}_{stage_name}_{runtime_env}_{formatted_string}'
+    experiment_name = f"MLOps_{task_config['mlflow_experiment_name']}_{stage_name}_{runtime_env}_{formatted_string}"
 
     # Create or set MLflow experiment
     experiment_id = set_mlflow_experiment(
@@ -119,11 +117,11 @@ def main(spark):
                 task=task_key,
                 job_name=job_name,
                 error_message=error_details,
-                run_url=run_url
+                run_url=run_url,
             )
         finally:
             logger.success(f"Started the setup for {stage_name}; {project_name}")
-    
+
     return experiment_id
 
 
