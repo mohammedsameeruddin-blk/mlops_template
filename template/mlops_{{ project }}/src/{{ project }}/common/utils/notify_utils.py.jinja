@@ -129,7 +129,7 @@ def send_gchat_inference_success(webhook_url, environment, project, models, job_
 
     logger.info("✅ Google Chat inference success alert sent successfully")
 
-def send_gchat_training_success(webhook_url, environment, project, models, job_name, run_url, experiment_url=None):
+def send_gchat_training_success(webhook_url, stage_name, environment, project, models, job_name, run_url, experiment_url=None):
 
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
@@ -164,7 +164,7 @@ def send_gchat_training_success(webhook_url, environment, project, models, job_n
                 "cardId": "training_success",
                 "card": {
                     "header": {
-                        "title": "✅ Training Job Succeeded",
+                        "title": f"✅ {stage_name.capitalize()} Job Succeeded",
                         "subtitle": f"Environment: {environment}"
                     },
                     "sections": [

@@ -72,13 +72,13 @@ def get_scaler_pipeline(model_registry_name, pipeline_file, local_path):
         apath = a.path
         file = apath.split('/')[-1]
         if file == pipeline_file:
-            client.download_artifacts(
+            downloaded_path = client.download_artifacts(
                 run_id=run_id,
                 path=apath,
                 dst_path=local_path
             )
-            logger.info(f"Artifact saved in - `{local_path}`")
-            return local_path
+            logger.info(f"Artifact saved in - `{downloaded_path}`")
+            return downloaded_path
 
 
 def main(spark):
@@ -246,10 +246,10 @@ def main(spark):
                             log_params_with_prefix(params=target_info, prefix="target.file")
                         
                         # Download the scaler object
-                        pl_output_path = base_output_dir / "data" / model_name
+                        pl_output_path = base_output_dir / "models" / model_name
                         pl_output_path.mkdir(parents=True, exist_ok=True)
                         source_info = func_kwargs["inputs"]["file"]
-                        get_scaler_pipeline(
+                        scaler_path = get_scaler_pipeline(
                             model_registry_name=model_registry_name,
                             pipeline_file=source_info["pipeline"],
                             local_path=pl_output_path
@@ -262,7 +262,7 @@ def main(spark):
 
                         # Perform inference
                         cls = load_class(class_path=func_conf["class_path"])
-                        scaler = joblib.load(filename=pl_output_path / "scaler.pkl")
+                        scaler = joblib.load(filename=scaler_path)
                         scorer = cls(input_df=input_df, model=model, scaler=scaler)
                         result_df = scorer.run()
                         spark_df = spark.createDataFrame(result_df)

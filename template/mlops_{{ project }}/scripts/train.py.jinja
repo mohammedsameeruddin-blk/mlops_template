@@ -5,6 +5,8 @@ import os
 import json
 import joblib
 import pandas as pd
+import tempfile
+import skops.io as sio
 from mlflow.models import infer_signature
 from datetime import datetime
 from pathlib import Path
@@ -187,7 +189,7 @@ def main(spark):
                                         mlflow.log_metric(key="loss", value=trial["loss"])
                                         mlflow.set_tag(key="status", value=trial["status"])
                         
-                        tuning_results_path = base_output_dir / "hyperparameter_results.json"
+                        tuning_results_path = base_output_dir / "models" / model_name / "hyperparameter_results.json"
                         tuning_results_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(tuning_results_path, "w") as f:
                             json.dump(tuning_results, f, indent=2)
@@ -199,7 +201,7 @@ def main(spark):
                         train_data_path = base_output_dir / source_info["train"]["data"].lstrip('/')
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
                         # TODO: read from hyper results from experiment not from the bundle path
-                        tuning_results_path = base_output_dir / "hyperparameter_results.json"
+                        tuning_results_path = base_output_dir / "models" / model_name / "hyperparameter_results.json"
                         if not tuning_results_path.exists():
                             raise FileNotFoundError("Hyperparameter tuning results not found")
 
@@ -253,7 +255,7 @@ def main(spark):
                         best_model_params = {
                             best_model_name: evaluation_results["models"][best_model_name]["best_params"]
                         }
-                        best_model_params_path = base_output_dir / "best_model_params.json"
+                        best_model_params_path = base_output_dir / "models" / model_name / "best_model_params.json"
                         best_model_params_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(best_model_params_path, "w") as f:
                             json.dump(best_model_params, f, indent=2)
@@ -266,7 +268,14 @@ def main(spark):
                         train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
                         test_df = pd.read_csv(filepath_or_buffer=test_data_path, sep=",")
                         # TODO: read from best_model_params results from experiment not from the bundle path
-                        best_model_params_path = base_output_dir / "best_model_params.json"
+                        if stage_name == "retraining":
+                            base_output_dir_train = os.path.join(root_path, "training", "models", model_name)
+                            base_output_dir_train = Path(base_output_dir_train)
+                            
+                        if stage_name == "retraining":
+                            best_model_params_path = base_output_dir_train / "best_model_params.json"
+                        else:
+                            best_model_params_path = base_output_dir / "models" / model_name / "best_model_params.json"
                         if not best_model_params_path.exists():
                             raise FileNotFoundError("Best model results not found")
 
@@ -299,7 +308,7 @@ def main(spark):
                         ):
                             mlflow.log_metrics(model_results["metrics"]["test"])
                         
-                        artifacts_dir = base_output_dir / "model_artifacts"
+                        artifacts_dir = base_output_dir / "models" / model_name / "model_artifacts"
                         artifacts_dir.mkdir(parents=True, exist_ok=True)
                         # Log best params
                         params_path = artifacts_dir / "best_model_params.json"
@@ -316,12 +325,19 @@ def main(spark):
                             model_input=X_sample,
                             model_output=y_sample
                         )
+                        # Dynamically discover what types are in the model
+                        with tempfile.NamedTemporaryFile(suffix=".skops", delete=False) as tmp:
+                            tmp_path = tmp.name
+                        sio.dump(model_results["model"], tmp_path)
+                        trusted_types = sio.get_untrusted_types(file=tmp_path)
+                        os.unlink(tmp_path)
                         model_info = mlflow.sklearn.log_model(
                             sk_model=model_results["model"],
                             artifact_path="model",
                             # registered_model_name=func_kwargs["model_registry_name"],
                             signature=signature,
-                            input_example=X_sample
+                            input_example=X_sample,
+                            skops_trusted_types=trusted_types, # auto-detected, works for any model
                         )
                         model_reg_info = mlflow.register_model(
                             model_uri=model_info.model_uri,
