@@ -15,7 +15,7 @@ class WorkflowFileGenerator:
         self.workflow_dir = self.repo_root / "workflow_jobs"
         self.training_job = self.workflow_dir / f"wf_{self.project_name}_training.yml"
         self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
-        # self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
+        self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
 
         # YAML handler
         self.yaml = YAML()
@@ -34,6 +34,10 @@ class WorkflowFileGenerator:
         if self.inference_job.exists():
             self._update_inference_job(model_name)
             updated.append(self.inference_job)
+
+        if self.retraining_job.exists():
+            self._update_retraining_job(model_name)
+            updated.append(self.retraining_job)
 
         return updated
 
@@ -164,6 +168,68 @@ class WorkflowFileGenerator:
         with self.inference_job.open("w") as f:
             self.yaml.dump(data, f)
     
+    def _update_retraining_job(self, model_name: str):
+
+        with self.retraining_job.open() as f:
+            data = self.yaml.load(f)
+
+        tasks = data["resources"]["jobs"]["retraining"]["tasks"]
+
+        new_task_key = f"{model_name}_retraining"
+
+        if any(t["task_key"] == new_task_key for t in tasks):
+            return
+
+        end_task = next(t for t in tasks if t["task_key"] == "end_setup")
+
+        new_task = {
+            "task_key": new_task_key,
+            "depends_on": [{"task_key": "split_data"}],
+            "environment_key": "default",
+            "spark_python_task": {
+                "python_file": "../scripts/train.py",
+                "parameters": [
+                    "--root_path",
+                    "${workspace.root_path}",
+                    "--runtime_env",
+                    "${var.run_time_env}",
+                    "--yml_task",
+                    "train.yml",
+                    "--project_name",
+                    f"{self.project_name}",
+                    "--model_name",
+                    f"{model_name}",
+                    "--stage_name",
+                    "retraining",
+                    "--task_key",
+                    "{{task.name}}",
+                    "--task_run_id",
+                    "{{task.run_id}}",
+                    "--job_name",
+                    "{{job.name}}",
+                    "--job_id",
+                    "{{job.id}}",
+                    "--job_run_id",
+                    "{{job.run_id}}",
+                    "--experiment_id",
+                    "{{tasks.split_data.values.experiment_id}}",
+                ],
+            },
+        }
+
+        # insert before end_setup
+        end_index = tasks.index(end_task)
+        tasks.insert(end_index, new_task)
+
+        # update end_setup dependency
+        end_task["depends_on"].append({"task_key": new_task_key})
+
+        # update model list parameter in end_setup
+        self._update_model_param(end_task, "--models_registered", model_name)
+
+        with self.retraining_job.open("w") as f:
+            self.yaml.dump(data, f)
+
     def _update_model_param(self, end_task, param_name: str, model_name: str):
         params = end_task["spark_python_task"]["parameters"]
 

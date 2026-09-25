@@ -39,7 +39,7 @@ class ProjectDiscovery:
 
         training_dir = project / "pipeline_configs" / "training"
         inference_dir = project / "pipeline_configs" / "inference"
-        # retraining_dir = project / "pipeline_configs" / "retraining"
+        retraining_dir = project / "pipeline_configs" / "retraining"
 
         def collect_from_pipeline_dir(pipeline_dir: Path) -> None:
             for yml_file in pipeline_dir.glob("*.yml"):
@@ -72,8 +72,8 @@ class ProjectDiscovery:
         if inference_dir.exists():
             collect_from_pipeline_dir(inference_dir)
 
-        # if retraining_dir.exists():
-        #     collect_from_pipeline_dir(retraining_dir)
+        if retraining_dir.exists():
+            collect_from_pipeline_dir(retraining_dir)
 
         return sorted(datasets)
     
@@ -85,7 +85,7 @@ class ProjectDiscovery:
 
         training_dir = project / "pipeline_configs" / "training"
         inference_dir = project / "pipeline_configs" / "inference"
-        # retraining_dir = project / "pipeline_configs" / "retraining"
+        retraining_dir = project / "pipeline_configs" / "retraining"
 
         models = set()
 
@@ -97,9 +97,9 @@ class ProjectDiscovery:
 
             train_file = training_dir / model_name / "train.yml"
             inference_file = inference_dir / model_name / "inference.yml"
-            # retrain_file = retraining_dir / model_name / "train.yml"
+            retrain_file = retraining_dir / model_name / "train.yml"
 
-            if train_file.exists() and inference_file.exists():
+            if train_file.exists() and inference_file.exists() and retrain_file.exists():
                 models.add(model_name)
 
         return sorted(models)

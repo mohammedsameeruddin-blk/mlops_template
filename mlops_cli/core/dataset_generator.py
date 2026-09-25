@@ -12,7 +12,7 @@ class DatasetFileGenerator:
         self.project_root = project_root
         self.training_dir = project_root / "pipeline_configs" / "training"
         self.inference_dir = project_root / "pipeline_configs" / "inference"
-        # self.retraining_dir = project_root / "pipeline_configs" / "retraining"
+        self.retraining_dir = project_root / "pipeline_configs" / "retraining"
 
         self.project_name = project_root.name
 
@@ -30,7 +30,7 @@ class DatasetFileGenerator:
 
         self.train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
         self.infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
-        # self.retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
+        self.retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
 
     def generate(self, dataset_name: str) -> list[Path]:
         context = {
@@ -72,21 +72,21 @@ class DatasetFileGenerator:
                 self._merge_rendered_actions_into_file(target_file, rendered_content)
             updated_files.append(target_file)
 
-        # ## Retraining pipeline
-        # retraining_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja", "splitter.yml.jinja"]
-        # for jfile in retraining_files:
-        #     rendered_content = self._render(
-        #         template_name=jfile,
-        #         context=context,
-        #         env=self.retrain_env
-        #     )
+        ## Retraining pipeline
+        retraining_files = ["data.yml.jinja", "preprocess.yml.jinja", "featurization.yml.jinja", "splitter.yml.jinja"]
+        for jfile in retraining_files:
+            rendered_content = self._render(
+                template_name=jfile,
+                context=context,
+                env=self.retrain_env
+            )
 
-        #     target_file = self.retraining_dir / jfile.replace(".jinja", "")
-        #     if jfile == "splitter.yml.jinja":
-        #         self._merge_rendered_features_into_file(target_file, rendered_content)
-        #     else:
-        #         self._merge_rendered_actions_into_file(target_file, rendered_content)
-        #     updated_files.append(target_file)
+            target_file = self.retraining_dir / jfile.replace(".jinja", "")
+            if jfile == "splitter.yml.jinja":
+                self._merge_rendered_features_into_file(target_file, rendered_content)
+            else:
+                self._merge_rendered_actions_into_file(target_file, rendered_content)
+            updated_files.append(target_file)
 
         return updated_files
 
