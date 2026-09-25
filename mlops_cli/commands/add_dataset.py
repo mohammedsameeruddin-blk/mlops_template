@@ -16,7 +16,7 @@ def add_dataset(project_path: str, dataset_name: str):
     """Add a new dataset to a MLOps project"""
 
     # Validate dataset name format
-    if not dataset_name or re.search(r'[^a-zA-Z0-9_-]', dataset_name):
+    if not dataset_name or re.search(r"[^a-zA-Z0-9_-]", dataset_name):
         click.echo(
             f"{Fore.RED}Error: Dataset name must contain only letters, numbers, dashes and underscores.{Style.RESET_ALL}"
         )

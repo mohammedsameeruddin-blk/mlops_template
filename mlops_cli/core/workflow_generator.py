@@ -3,7 +3,6 @@ from ruamel.yaml import YAML
 
 
 class WorkflowFileGenerator:
-
     def __init__(self, project_root: Path):
         """
         project_root = src/<project_name>
@@ -15,7 +14,9 @@ class WorkflowFileGenerator:
         self.workflow_dir = self.repo_root / "workflow_jobs"
         self.training_job = self.workflow_dir / f"wf_{self.project_name}_training.yml"
         self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
-        self.retraining_job = self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
+        self.retraining_job = (
+            self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
+        )
 
         # YAML handler
         self.yaml = YAML()
@@ -24,7 +25,6 @@ class WorkflowFileGenerator:
         self.yaml.width = 4096
 
     def generate(self, model_name: str):
-
         updated = []
 
         if self.training_job.exists():
@@ -42,7 +42,6 @@ class WorkflowFileGenerator:
         return updated
 
     def _update_training_job(self, model_name: str):
-
         with self.training_job.open() as f:
             data = self.yaml.load(f)
 
@@ -106,7 +105,6 @@ class WorkflowFileGenerator:
             self.yaml.dump(data, f)
 
     def _update_inference_job(self, model_name: str):
-
         with self.inference_job.open() as f:
             data = self.yaml.load(f)
 
@@ -167,9 +165,8 @@ class WorkflowFileGenerator:
 
         with self.inference_job.open("w") as f:
             self.yaml.dump(data, f)
-    
-    def _update_retraining_job(self, model_name: str):
 
+    def _update_retraining_job(self, model_name: str):
         with self.retraining_job.open() as f:
             data = self.yaml.load(f)
 

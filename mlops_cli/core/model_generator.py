@@ -14,15 +14,17 @@ class ModelFileGenerator:
 
         self.project_name = project_root.name
 
-        self.templates_dir = (
-            Path(__file__).resolve().parents[1]
-            / "templates"
-            / "model"
-        )
+        self.templates_dir = Path(__file__).resolve().parents[1] / "templates" / "model"
 
-        self.train_env = Environment(loader=FileSystemLoader(self.templates_dir / "training"))
-        self.infer_env = Environment(loader=FileSystemLoader(self.templates_dir / "inference"))
-        self.retrain_env = Environment(loader=FileSystemLoader(self.templates_dir / "retraining"))
+        self.train_env = Environment(
+            loader=FileSystemLoader(self.templates_dir / "training")
+        )
+        self.infer_env = Environment(
+            loader=FileSystemLoader(self.templates_dir / "inference")
+        )
+        self.retrain_env = Environment(
+            loader=FileSystemLoader(self.templates_dir / "retraining")
+        )
 
     def generate(self, model: str) -> list[Path]:
         train_model_dir = self.training_dir / model
@@ -44,10 +46,7 @@ class ModelFileGenerator:
         else:
             retrain_model_dir.mkdir(parents=True)
 
-        context = {
-            "project": self.project_name,
-            "model": model
-        }
+        context = {"project": self.project_name, "model": model}
 
         created_files = []
 
@@ -70,7 +69,7 @@ class ModelFileGenerator:
             created_files.append(
                 self._render(template_name, output_path, context, self.infer_env)
             )
-        
+
         ## Retraining pipeline
         for template_name in self.retrain_env.list_templates():
             if not template_name.endswith(".jinja"):
@@ -80,10 +79,12 @@ class ModelFileGenerator:
             created_files.append(
                 self._render(template_name, output_path, context, self.retrain_env)
             )
-        
+
         return created_files
 
-    def _render(self, template_name: str, output_path: Path, context: dict, env: Environment) -> Path:
+    def _render(
+        self, template_name: str, output_path: Path, context: dict, env: Environment
+    ) -> Path:
         template = env.get_template(template_name)
         content = template.render(**context)
 

@@ -76,7 +76,7 @@ class ProjectDiscovery:
             collect_from_pipeline_dir(retraining_dir)
 
         return sorted(datasets)
-    
+
     # Model discovery
     def get_models(self) -> List[str]:
         project = self.get_project_root()
@@ -99,8 +99,11 @@ class ProjectDiscovery:
             inference_file = inference_dir / model_name / "inference.yml"
             retrain_file = retraining_dir / model_name / "train.yml"
 
-            if train_file.exists() and inference_file.exists() and retrain_file.exists():
+            if (
+                train_file.exists()
+                and inference_file.exists()
+                and retrain_file.exists()
+            ):
                 models.add(model_name)
 
         return sorted(models)
-

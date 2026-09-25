@@ -17,7 +17,7 @@ def add_model(project_path: str, model_name: str):
     """Add a new model to a mlops project"""
 
     # Validate model name format
-    if not model_name or re.search(r'[^a-zA-Z0-9_-]', model_name):
+    if not model_name or re.search(r"[^a-zA-Z0-9_-]", model_name):
         click.echo(
             f"{Fore.RED}Error: Model name must contain only letters, numbers, dashes and underscores.{Style.RESET_ALL}"
         )
@@ -46,36 +46,32 @@ def add_model(project_path: str, model_name: str):
         f"{', '.join(existing_models) if existing_models else 'None'}"
         f"{Style.RESET_ALL}\n"
     )
-    
+
     if model_name in existing_models:
         click.echo(
             f"{Fore.RED}Error: Model '{model_name}' already exists{Style.RESET_ALL}"
         )
         raise click.Abort()
-    
+
     # Model generator
     model_generator = ModelFileGenerator(project_root)
-    click.echo(
-        f"{Fore.CYAN}Creating model '{model_name}'...{Style.RESET_ALL}"
-    )
+    click.echo(f"{Fore.CYAN}Creating model '{model_name}'...{Style.RESET_ALL}")
     created_files = model_generator.generate(model_name)
 
     # Workflow generator
     workflow_generator = WorkflowFileGenerator(project_root)
-    click.echo(
-        f"{Fore.CYAN}Updating workflow jobs...{Style.RESET_ALL}"
-    )
+    click.echo(f"{Fore.CYAN}Updating workflow jobs...{Style.RESET_ALL}")
     updated_workflow_files = workflow_generator.generate(model_name)
 
     # Report results
     click.echo(
         f"\n{Fore.GREEN}✓ Successfully created new model: {model_name}{Style.RESET_ALL}\n"
     )
-    
+
     click.echo(f"{Fore.GREEN}Created files:{Style.RESET_ALL}")
     for file_path in created_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
-    
+
     click.echo(f"\n{Fore.GREEN}Updated workflow files:{Style.RESET_ALL}")
     for file_path in updated_workflow_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
