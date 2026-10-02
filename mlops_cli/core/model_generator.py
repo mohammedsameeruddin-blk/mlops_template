@@ -38,7 +38,7 @@ class ModelFileGenerator:
         self.yaml.indent(mapping=2, sequence=4, offset=2)
         self.yaml.width = 4096
 
-    def generate(self, model: str) -> list[Path]:
+    def generate(self, model: str) -> tuple[list[Path], list[Path]]:
         train_model_dir = self.training_dir / model
         inference_model_dir = self.inference_dir / model
         retrain_model_dir = self.retraining_dir / model
@@ -66,6 +66,7 @@ class ModelFileGenerator:
         context = {"project": self.project_name, "model": model}
 
         created_files = []
+        updated_files = []
 
         ## Training pipeline
         for template_name in self.train_env.list_templates():
@@ -112,9 +113,9 @@ class ModelFileGenerator:
             )
 
         self._ensure_data_yml()
-        created_files.append(self._update_evaluate_yml(model))
+        updated_files.append(self._update_evaluate_yml(model))
 
-        return created_files
+        return created_files, updated_files
 
     def _ensure_data_yml(self) -> None:
         data_yml = self.drift_monitoring_dir / "data.yml"

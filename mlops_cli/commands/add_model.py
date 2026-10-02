@@ -56,7 +56,7 @@ def add_model(project_path: str, model_name: str):
     # Model generator
     model_generator = ModelFileGenerator(project_root)
     click.echo(f"{Fore.CYAN}Creating model '{model_name}'...{Style.RESET_ALL}")
-    created_files = model_generator.generate(model_name)
+    created_files, updated_pipeline_files = model_generator.generate(model_name)
 
     # Workflow generator
     workflow_generator = WorkflowFileGenerator(project_root)
@@ -72,8 +72,8 @@ def add_model(project_path: str, model_name: str):
     for file_path in created_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
 
-    click.echo(f"\n{Fore.GREEN}Updated workflow files:{Style.RESET_ALL}")
-    for file_path in updated_workflow_files:
+    click.echo(f"\n{Fore.GREEN}Updated files:{Style.RESET_ALL}")
+    for file_path in updated_pipeline_files + updated_workflow_files:
         click.echo(f"  • {file_path.relative_to(project_path)}")
 
     click.echo(f"\n{Fore.YELLOW}Next steps:{Style.RESET_ALL}")
