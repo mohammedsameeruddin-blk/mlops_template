@@ -14,6 +14,9 @@ class ModelFileDegenerator:
         self.training_dir = project_root / "pipeline_configs" / "training"
         self.inference_dir = project_root / "pipeline_configs" / "inference"
         self.retraining_dir = project_root / "pipeline_configs" / "retraining"
+        self.drift_monitoring_dir = (
+            project_root / "pipeline_configs" / "drift_monitoring"
+        )
 
         self.repo_root = project_root.parents[1]
         self.workflow_dir = self.repo_root / "workflow_jobs"
@@ -21,6 +24,9 @@ class ModelFileDegenerator:
         self.inference_job = self.workflow_dir / f"wf_{self.project_name}_inference.yml"
         self.retraining_job = (
             self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
+        )
+        self.drift_monitoring_job = (
+            self.workflow_dir / f"wf_{self.project_name}_drift_monitoring.yml"
         )
 
         self.yaml = YAML()
@@ -33,12 +39,19 @@ class ModelFileDegenerator:
         updated_workflow_files = []
 
         # Remove model config directories
-        for stage_dir in (self.training_dir, self.inference_dir, self.retraining_dir):
+        for stage_dir in (
+            self.training_dir,
+            self.inference_dir,
+            self.retraining_dir,
+            self.drift_monitoring_dir,
+        ):
             model_dir = stage_dir / model_name
             if model_dir.exists():
                 for f in model_dir.iterdir():
                     removed_files.append(f)
                 shutil.rmtree(model_dir)
+
+        self._update_evaluate_yml(model_name)
 
         # Update workflow files
         if self.training_job.exists():
@@ -71,15 +84,36 @@ class ModelFileDegenerator:
             )
             updated_workflow_files.append(self.retraining_job)
 
+        if self.drift_monitoring_job.exists():
+            self._remove_from_job(
+                self.drift_monitoring_job,
+                "drift_monitoring",
+                f"{model_name}_drift_detection",
+                None,
+                None,
+            )
+            updated_workflow_files.append(self.drift_monitoring_job)
+
         return removed_files, updated_workflow_files
+
+    def _update_evaluate_yml(self, model_name: str) -> None:
+        evaluate_yml = self.drift_monitoring_dir / "evaluate.yml"
+        if not evaluate_yml.exists():
+            return
+        with evaluate_yml.open() as f:
+            data = self.yaml.load(f)
+        models: list = data["actions"][0]["functions"]["kwargs"]["models"]
+        models[:] = [m for m in models if m != model_name]
+        with evaluate_yml.open("w") as f:
+            self.yaml.dump(data, f)
 
     def _remove_from_job(
         self,
         job_path: Path,
         job_key: str,
         task_key: str,
-        param_name: str,
-        model_name: str,
+        param_name: str | None = None,
+        model_name: str | None = None,
     ) -> None:
         with job_path.open() as f:
             data = self.yaml.load(f)
@@ -106,16 +140,18 @@ class ModelFileDegenerator:
         with job_path.open("w") as f:
             self.yaml.dump(data, f)
 
-    def _remove_model_param(self, end_task, param_name: str, model_name: str) -> None:
+    def _remove_model_param(
+        self, end_task, param_name: str | None, model_name: str | None
+    ) -> None:
         params = end_task["spark_python_task"]["parameters"]
 
         for i, p in enumerate(params):
-            if p == param_name:
+            if param_name is not None and p == param_name:
                 current = params[i + 1].strip("'")
                 models = [
                     m.strip()
                     for m in current.split(",")
-                    if m.strip() and m.strip() != model_name
+                    if m.strip() and (model_name is None or m.strip() != model_name)
                 ]
                 params[i + 1] = ",".join(models)
                 break

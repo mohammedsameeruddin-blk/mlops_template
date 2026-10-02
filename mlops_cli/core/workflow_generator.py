@@ -17,6 +17,9 @@ class WorkflowFileGenerator:
         self.retraining_job = (
             self.workflow_dir / f"wf_{self.project_name}_retraining.yml"
         )
+        self.drift_monitoring_job = (
+            self.workflow_dir / f"wf_{self.project_name}_drift_monitoring.yml"
+        )
 
         # YAML handler
         self.yaml = YAML()
@@ -38,6 +41,10 @@ class WorkflowFileGenerator:
         if self.retraining_job.exists():
             self._update_retraining_job(model_name)
             updated.append(self.retraining_job)
+
+        if self.drift_monitoring_job.exists():
+            self._update_drift_monitoring_job(model_name)
+            updated.append(self.drift_monitoring_job)
 
         return updated
 
@@ -225,6 +232,66 @@ class WorkflowFileGenerator:
         self._update_model_param(end_task, "--models_registered", model_name)
 
         with self.retraining_job.open("w") as f:
+            self.yaml.dump(data, f)
+
+    def _update_drift_monitoring_job(self, model_name: str):
+        with self.drift_monitoring_job.open() as f:
+            data = self.yaml.load(f)
+
+        tasks = data["resources"]["jobs"]["drift_monitoring"]["tasks"]
+
+        new_task_key = f"{model_name}_drift_detection"
+
+        if any(t["task_key"] == new_task_key for t in tasks):
+            return
+
+        drift_evaluation_task = next(
+            t for t in tasks if t["task_key"] == "evaluate_drift_results"
+        )
+
+        new_task = {
+            "task_key": new_task_key,
+            "depends_on": [{"task_key": "start_setup"}],
+            "environment_key": "default",
+            "spark_python_task": {
+                "python_file": "../scripts/drift_detection.py",
+                "parameters": [
+                    "--root_path",
+                    "${workspace.root_path}",
+                    "--runtime_env",
+                    "${var.run_time_env}",
+                    "--yml_task",
+                    "drift.yml",
+                    "--project_name",
+                    f"{self.project_name}",
+                    "--model_name",
+                    f"{model_name}",
+                    "--stage_name",
+                    "drift_monitoring",
+                    "--task_key",
+                    "{{task.name}}",
+                    "--task_run_id",
+                    "{{task.run_id}}",
+                    "--job_name",
+                    "{{job.name}}",
+                    "--job_id",
+                    "{{job.id}}",
+                    "--job_run_id",
+                    "{{job.run_id}}",
+                    "--experiment_id",
+                    "{{tasks.start_setup.values.experiment_id}}",
+                ],
+            },
+        }
+
+        # insert before evaluate_drift_results
+        end_index = tasks.index(drift_evaluation_task)
+        tasks.insert(end_index, new_task)
+
+        # update evaluate_drift_results dependency
+        drift_evaluation_task["depends_on"].append({"task_key": new_task_key})
+
+        with self.drift_monitoring_job.open("w") as f:
             self.yaml.dump(data, f)
 
     def _update_model_param(self, end_task, param_name: str, model_name: str):

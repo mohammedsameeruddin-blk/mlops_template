@@ -1,0 +1,54 @@
+version: '1.0'
+stage: drift_monitoring
+file: drift.yml
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: detect_drift
+    enable: true
+    functions:
+      class_path: {{ project }}.common.drift.detectors:DriftOrchestrator
+      kwargs:
+        project_name: "{{ project }}"
+        process_name: {{ model }}_drift_detection
+        model_name: {{ model }}
+        drift_results_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ project }}_drift_results"
+
+        detectors:
+          data_drift:
+            enable: true
+            # KS for numerical, chi-square for categorical (alibi-detect)
+            method: tabular_drift
+            p_val: 0.05
+            # multiple-testing correction: bonferroni | fdr
+            correction: bonferroni
+            feature_columns:
+              # "any" means all columns; or list specific feature names
+              - any
+
+          prediction_drift:
+            enable: true
+            method: ks_test
+            p_val: 0.05
+            score_column: prediction_score
+
+          data_quality:
+            enable: true
+            # flag if null rate increases by >5 percentage points
+            null_threshold: 0.05
+
+        reference:
+          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<train_features>" # change this as per the need
+          # set if training-time scores are stored separately
+          predictions_table: null
+
+        current:
+          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<test_incoming_features>" # change this as per the need
+          predictions_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"
+
+        thresholds:
+          # informational: % of features that need to drift for "major" model flag
+          drift_percentage: 30
+          # drift score >= this â†’ "minor"
+          severity_minor: 0.10
+          # drift score >= this â†’ "major"
+          severity_major: 0.25
