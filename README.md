@@ -56,7 +56,7 @@ mlops-cli remove-dataset /path/to/project --dataset-name <name>
 
 ### `add-model`
 
-Adds a new model to an existing MLOps project. Creates pipeline config files under `training/`, `inference/`, and `retraining/` subdirectories, and inserts the corresponding tasks into all three workflow job YAML files.
+Adds a new model to an existing MLOps project. Creates pipeline config files under `training/`, `inference/`, `retraining/`, and `drift_monitoring/` subdirectories, appends the model to `drift_monitoring/evaluate.yml`, and inserts the corresponding tasks into all four workflow job YAML files.
 
 ```bash
 mlops-cli add-model /path/to/project --model-name <name>
@@ -70,17 +70,22 @@ mlops-cli add-model /path/to/project --model-name <name>
 - `pipeline_configs/training/<model>/train.yml`
 - `pipeline_configs/inference/<model>/inference.yml`
 - `pipeline_configs/retraining/<model>/train.yml`
+- `pipeline_configs/drift_monitoring/<model>/drift.yml`
 
 **Updates:**
+- `pipeline_configs/drift_monitoring/evaluate.yml` — appends model to `models:` list
 - `workflow_jobs/wf_<project>_training.yml`
 - `workflow_jobs/wf_<project>_inference.yml`
 - `workflow_jobs/wf_<project>_retraining.yml`
+- `workflow_jobs/wf_<project>_drift_monitoring.yml`
+
+> `pipeline_configs/drift_monitoring/data.yml` is created on the first model add if it does not already exist.
 
 ---
 
 ### `remove-model`
 
-Removes an existing model from an MLOps project. Deletes the model's pipeline config directories and removes the corresponding tasks (and their `end_setup` dependencies) from all three workflow job YAML files.
+Removes an existing model from an MLOps project. Deletes the model's pipeline config directories, removes the model from `drift_monitoring/evaluate.yml`, and strips the corresponding tasks from all four workflow job YAML files.
 
 ```bash
 mlops-cli remove-model /path/to/project --model-name <name>
@@ -94,11 +99,14 @@ mlops-cli remove-model /path/to/project --model-name <name>
 - `pipeline_configs/training/<model>/`
 - `pipeline_configs/inference/<model>/`
 - `pipeline_configs/retraining/<model>/`
+- `pipeline_configs/drift_monitoring/<model>/`
 
 **Updates:**
+- `pipeline_configs/drift_monitoring/evaluate.yml` — removes model from `models:` list
 - `workflow_jobs/wf_<project>_training.yml`
 - `workflow_jobs/wf_<project>_inference.yml`
 - `workflow_jobs/wf_<project>_retraining.yml`
+- `workflow_jobs/wf_<project>_drift_monitoring.yml`
 
 ---
 
