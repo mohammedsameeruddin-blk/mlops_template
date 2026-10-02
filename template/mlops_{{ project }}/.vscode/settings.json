@@ -1,0 +1,21 @@
+{
+    "ruff.importStrategy": "useBundled",
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        }
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.egg-info": true,
+        ".ruff_cache": true,
+        "dist": true,
+        ".venv": true
+    },
+    "editor.rulers": [88]
+}
