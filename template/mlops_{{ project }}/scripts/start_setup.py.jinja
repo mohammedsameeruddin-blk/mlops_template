@@ -1,18 +1,21 @@
-import importlib
-import mlflow
 import argparse
-from pathlib import Path
-from datetime import datetime
-from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
+import importlib
+from datetime import datetime, timezone
 
+import mlflow
+from databricks.sdk import WorkspaceClient
 from loguru import logger
+from pyspark.sql import SparkSession
+
+try:
+    from pyspark.dbutils import DBUtils  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    DBUtils = None
 
 from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config,
 )
-from {{ project }}.common.utils.notify_utils import send_gchat_failure
 
 
 def load_class(class_path: str):
@@ -23,8 +26,10 @@ def load_class(class_path: str):
 
 def set_mlflow_experiment(root_path, stage_name, experiment_name):
     experiment_name = f"{root_path}/{stage_name}/experiments/{experiment_name}"
-    experiment_path = Path(f"{root_path}/{stage_name}/experiments")
-    experiment_path.mkdir(parents=True, exist_ok=True)
+    experiment_folder = f"{root_path}/{stage_name}/experiments"
+
+    w = WorkspaceClient()
+    w.workspace.mkdirs(path=experiment_folder)
 
     experiment = mlflow.get_experiment_by_name(experiment_name)
     if experiment is None:
@@ -63,10 +68,6 @@ def main(spark):
     project_name = args.project_name
     model_name = args.model_name
     stage_name = args.stage_name
-    task_key = args.task_key
-    job_name = args.job_name
-    job_id = args.job_id
-    job_run_id = args.job_run_id
 
     # load config from TOML based on runtime_env
     env_context = load_project_config(project_name=project_name, env_name=runtime_env)
@@ -81,9 +82,8 @@ def main(spark):
         env_context=env_context,
         which_file=yml_task,
     )
-    actions_config = task_config.get("actions", [])
 
-    formatted_string = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    formatted_string = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     experiment_name = f"MLOps_{task_config['mlflow_experiment_name']}_{stage_name}_{runtime_env}_{formatted_string}"
 
     # Create or set MLflow experiment
@@ -91,43 +91,13 @@ def main(spark):
         root_path=root_path, stage_name=stage_name, experiment_name=experiment_name
     )
 
-    for aconf in actions_config:
-        action_name = aconf["name"]
-        func_conf = aconf["functions"]
-        cls = load_class(func_conf["class_path"])
-
-        logger.info(f"Starting action: {action_name}")
-
-        error_details = ""
-
-        workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
-        run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
-        env_name_notify = runtime_env.upper()
-
-        try:
-            # assumes 'spark' is provided by Databricks environment
-            cls(spark=spark, func_conf=func_conf)
-        except Exception as e:
-            error_details = str(e)[:500]
-            logger.error(f"Action failed: {action_name}")
-            send_gchat_failure(
-                webhook_url=env_context["WEBHOOK_URL"],
-                environment=env_name_notify,
-                project=project_name,
-                task=task_key,
-                job_name=job_name,
-                error_message=error_details,
-                run_url=run_url,
-            )
-        finally:
-            logger.success(f"Started the setup for {stage_name}; {project_name}")
-
     return experiment_id
 
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
-    dbutils = DBUtils(spark)
+    dbutils = DBUtils(spark) if DBUtils is not None else None
 
     experiment_id = main(spark=spark)
-    dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+    if dbutils is not None:
+        dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)

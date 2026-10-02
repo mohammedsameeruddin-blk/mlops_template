@@ -1,7 +1,8 @@
-import toml
 from importlib import resources
-from benedict import benedict
 from pathlib import Path
+
+import toml
+from benedict import benedict
 from jinja2 import Template
 
 
@@ -28,7 +29,7 @@ def load_task_config(
     which_file: str,
 ) -> dict:
     # Read and render the Jinja-based YAML using env
-    if which_file.startswith("train") or which_file.startswith("inference"):
+    if which_file.startswith(("train", "inference", "drift")):
         yaml_path = (
             resources.files(
                 f"{project_name}.pipeline_configs.{stage_name}.{model_name}"
@@ -37,7 +38,7 @@ def load_task_config(
         )
 
     else:
-        if which_file.startswith("start") or which_file.startswith("end"):
+        if which_file.startswith(("start", "end")):
             stage_name = "common"
         yaml_path = (
             resources.files(f"{project_name}.pipeline_configs.{stage_name}")

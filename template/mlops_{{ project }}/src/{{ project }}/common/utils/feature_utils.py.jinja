@@ -1,13 +1,13 @@
+import mlflow
 from databricks.feature_store import FeatureStoreClient
 from loguru import logger
-import mlflow
 
 
 def feature_table_exists(fs, table_name):
     try:
         fs.get_table(table_name)
         return True
-    except Exception:
+    except (ValueError, KeyError):
         return False
 
 

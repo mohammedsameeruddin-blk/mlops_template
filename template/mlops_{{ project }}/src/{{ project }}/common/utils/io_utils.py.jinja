@@ -1,15 +1,12 @@
+import json
 import os
 import shutil
-import json
+from datetime import datetime, timezone
+
 import mlflow
-from datetime import datetime
-from pyspark.sql.types import (
-    StructType,
-    StructField,
-    StringType,
-)
-from pyspark.sql.functions import col
 from loguru import logger
+from pyspark.sql.functions import col
+from pyspark.sql.types import StringType, StructField, StructType
 
 
 def setup_project_output_path(spark, func_conf):
@@ -91,8 +88,10 @@ def cleanup_pipeline_setup(spark, func_conf):
             logger.info(
                 f"Cleaned-up the project output folder - `{project_output_path}`"
             )
-        except Exception:
-            pass
+        except OSError as exc:
+            logger.warning(
+                f"Failed to clean up the project output folder `{project_output_path}`: {exc}"
+            )
 
         return True
 
@@ -106,7 +105,7 @@ def log_experiment_details(spark, experiment_id, model_name, stage_name, func_co
 
     table_name = func_conf["kwargs"]["outputs"]["databricks_table"]
 
-    insert_update_timestamp = datetime.now().isoformat()
+    insert_update_timestamp = datetime.now(timezone.utc).isoformat()
 
     df = spark.createDataFrame(
         [

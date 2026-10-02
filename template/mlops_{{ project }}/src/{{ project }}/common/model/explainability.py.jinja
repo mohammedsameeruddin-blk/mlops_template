@@ -1,7 +1,8 @@
-import shap
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import shap
+from loguru import logger
 
 
 def feature_importance(shap_values, df, file_name):
@@ -43,8 +44,6 @@ def feature_importance(shap_values, df, file_name):
     plt.xlabel("Importance in %")
     plt.savefig(file_name)
 
-    return None
-
 
 def model_explain(
     model, train_data, test_data, file_name, file_name1, file_name2, file_name3
@@ -85,5 +84,5 @@ def model_explain(
         )  # not applicable for linear model
         plt.savefig(file_name3, bbox_inches="tight")
         plt.clf()
-    except Exception:
-        pass
+    except (ValueError, TypeError, IndexError):
+        logger.warning("Could not generate the individual data explainability plot")
