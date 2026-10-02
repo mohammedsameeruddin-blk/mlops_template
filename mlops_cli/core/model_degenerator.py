@@ -127,14 +127,17 @@ class ModelFileDegenerator:
         # remove the model task
         tasks[:] = [t for t in tasks if t["task_key"] != task_key]
 
-        # remove from end_setup depends_on and model param
+        # clean up depends_on in every remaining task
+        for task in tasks:
+            if "depends_on" in task:
+                task["depends_on"] = [
+                    d for d in task["depends_on"]
+                    if d.get("task_key") != task_key
+                ]
+
+        # remove model param from end_setup
         end_task = next((t for t in tasks if t["task_key"] == "end_setup"), None)
         if end_task:
-            end_task["depends_on"] = [
-                d
-                for d in end_task.get("depends_on", [])
-                if d.get("task_key") != task_key
-            ]
             self._remove_model_param(end_task, param_name, model_name)
 
         with job_path.open("w") as f:
