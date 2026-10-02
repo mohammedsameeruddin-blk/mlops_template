@@ -100,11 +100,11 @@ class ModelFileDegenerator:
         evaluate_yml = self.drift_monitoring_dir / "evaluate.yml"
         if not evaluate_yml.exists():
             return
-        with evaluate_yml.open() as f:
+        with evaluate_yml.open(encoding="utf-8") as f:
             data = self.yaml.load(f)
         models: list = data["actions"][0]["functions"]["kwargs"]["models"]
         models[:] = [m for m in models if m != model_name]
-        with evaluate_yml.open("w") as f:
+        with evaluate_yml.open("w", encoding="utf-8") as f:
             self.yaml.dump(data, f)
 
     def _remove_from_job(

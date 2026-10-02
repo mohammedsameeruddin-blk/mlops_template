@@ -160,12 +160,12 @@ class ModelFileGenerator:
             # )
             # evaluate_yml.write_text(content, encoding="utf-8")
         else:
-            with evaluate_yml.open() as f:
+            with evaluate_yml.open(encoding="utf-8") as f:
                 data = self.yaml.load(f)
             models: list = data["actions"][0]["functions"]["kwargs"]["models"]
             if model not in models:
                 models.append(model)
-            with evaluate_yml.open("w") as f:
+            with evaluate_yml.open("w", encoding="utf-8") as f:
                 self.yaml.dump(data, f)
 
         return evaluate_yml
