@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from loguru import logger
+
+
+class DriftEvaluator:
+    """
+    Aggregates per-model drift results from the drift results table,
+    sends a GChat notification, and optionally triggers the retraining pipeline.
+    Referenced from pipeline YAML via class_path.
+    """
+
+    def __init__(self, spark, func_conf: dict):
+        self.spark = spark
+        self.func_conf = func_conf
+        kwargs = func_conf["kwargs"]
+
+        self.models: list[str] = kwargs.get("models", [])
+        self.drift_results_table: str = kwargs["drift_results_table"]
+        self.auto_trigger_cfg: dict = kwargs.get("auto_trigger", {})
+
+    def run(self, job_run_id: str, workspace_url: str) -> dict:
+        """
+        Aggregate drift results for the current run and optionally trigger retraining.
+        Returns a summary dict: drifted_models, drift_types, model_summaries, triggered_retraining.
+        """
+        # Read results for this run
+        sdf = self.spark.read.table(self.drift_results_table)
+        pdf = sdf.filter(sdf["job_run_id"] == job_run_id).toPandas()
+
+        if pdf.empty:
+            logger.warning("No drift results found for this run — skipping evaluation.")
+            return {
+                "drifted_models": [],
+                "drift_types": [],
+                "triggered_retraining": False,
+            }
+
+        # Summarise per model: did any detector flag drift?
+        overall = (
+            pdf.groupby("model_name")["is_drift"]
+            .any()
+            .reset_index()
+            .rename(columns={"is_drift": "model_has_drift"})
+        )
+        drifted_models = overall.loc[overall["model_has_drift"], "model_name"].tolist()
+        drifted_types = pdf.loc[pdf["is_drift"], "drift_type"].unique().tolist()
+
+        logger.info(f"Drift evaluation - drifted models: {drifted_models}")
+        logger.info(f"Drift evaluation - drift types: {drifted_types}")
+
+        # Build per-model summary for notification
+        model_summaries = {}
+        for model in self.models:
+            model_rows = pdf[pdf["model_name"] == model]
+            if model_rows.empty:
+                model_summaries[model] = "no data"
+                continue
+            has_drift = bool(model_rows["is_drift"].any())
+            drift_types = (
+                model_rows.loc[model_rows["is_drift"], "drift_type"].unique().tolist()
+            )
+            severity = model_rows.loc[model_rows["is_drift"], "severity"].mode()
+            top_severity = severity.iloc[0] if not severity.empty else "none"
+            model_summaries[model] = {
+                "has_drift": has_drift,
+                "drift_types": drift_types,
+                "top_severity": top_severity,
+            }
+
+        # Optionally trigger retraining
+        triggered = False
+        if self.auto_trigger_cfg.get("enable", False) and drifted_models:
+            min_drifted = int(self.auto_trigger_cfg.get("min_drifted_models", 1))
+            retraining_job_id = self.auto_trigger_cfg.get("retraining_job_id")
+            if len(drifted_models) >= min_drifted and retraining_job_id:
+                try:
+                    run_id = trigger_retraining_job(
+                        workspace_url=workspace_url,
+                        job_id=int(retraining_job_id),
+                    )
+                    triggered = True
+                    logger.info(f"Retraining pipeline triggered - run_id: {run_id}")
+                except Exception as exc:
+                    logger.error(f"Failed to trigger retraining: {exc}")
+            elif not retraining_job_id:
+                logger.warning(
+                    "auto_trigger.enable=true but retraining_job_id is not set; skipping trigger."
+                )
+
+        return {
+            "drifted_models": drifted_models,
+            "drift_types": drifted_types,
+            "model_summaries": model_summaries,
+            "triggered_retraining": triggered,
+        }
+
+
+def trigger_retraining_job(
+    workspace_url: str, job_id: int, token: str | None = None
+) -> int:
+    """
+    Trigger the Databricks retraining job via the Jobs API.
+    Uses the Databricks SDK when available; falls back to a direct REST call.
+    Returns the triggered run_id.
+    """
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        client_kwargs: dict = {"host": workspace_url}
+        if token:
+            client_kwargs["token"] = token
+
+        w = WorkspaceClient(**client_kwargs)
+        run = w.jobs.run_now(job_id=job_id)
+        return run.run_id
+    except ImportError:
+        import requests
+
+        url = f"{workspace_url.rstrip('/')}/api/2.1/jobs/run-now"
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        resp = requests.post(url, headers=headers, json={"job_id": job_id}, timeout=30)
+        resp.raise_for_status()
+        return resp.json().get("run_id")

@@ -1,0 +1,166 @@
+import argparse
+import importlib
+from datetime import datetime, timezone
+
+import mlflow
+from loguru import logger
+from pyspark.sql import SparkSession
+
+try:
+    from pyspark.dbutils import DBUtils  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    DBUtils = None
+
+from {{ project }}.common.utils.audit_utils import write_to_audit_table
+from {{ project }}.common.utils.config_utils import (
+    load_project_config,
+    load_task_config,
+)
+from {{ project }}.common.utils.notify_utils import send_gchat_failure
+
+
+def load_class(class_path: str):
+    module_path, class_name = class_path.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
+
+def main(spark):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--root_path", required=True)
+    parser.add_argument("--runtime_env", required=True)
+    parser.add_argument("--yml_task", required=True)
+    parser.add_argument("--project_name", required=True)
+    parser.add_argument("--model_name", required=True)
+    parser.add_argument("--stage_name", required=True)
+    parser.add_argument("--task_key", required=True)
+    parser.add_argument("--task_run_id", required=True)
+    parser.add_argument("--job_name", required=True)
+    parser.add_argument("--job_id", required=True)
+    parser.add_argument("--job_run_id", required=True)
+    parser.add_argument("--experiment_id", required=True)
+
+    args = parser.parse_args()
+    runtime_env = args.runtime_env.lower()
+    yml_task = args.yml_task
+    project_name = args.project_name
+    model_name = args.model_name
+    stage_name = args.stage_name
+    task_key = args.task_key
+    task_run_id = args.task_run_id
+    job_name = args.job_name
+    job_id = args.job_id
+    job_run_id = args.job_run_id
+    experiment_id = args.experiment_id
+
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
+    task_config = load_task_config(
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
+    )
+
+    placeholder_audit_table = f"hive_metastore.default.mlops_{project_name}_audit_tbl"
+    audit_table = task_config.get("audit_table", placeholder_audit_table)
+    if audit_table.startswith("."):
+        logger.warning("`AUDIT_TARGET_CATALOG` is not specified in `config.toml`.")
+        audit_table = placeholder_audit_table
+
+    workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
+    run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
+    env_name_notify = runtime_env.upper()
+
+    model_has_drift = False
+
+    with mlflow.start_run(
+        run_name=f"{model_name}_drift_detection",
+        experiment_id=experiment_id,
+        nested=True,
+    ):
+        actions_config = task_config.get("actions", [])
+        for action in actions_config:
+            if not action.get("enable", True):
+                continue
+
+            action_name = action["name"]
+            func_conf = action["functions"]
+            process_name = func_conf["kwargs"]["process_name"]
+
+            logger.info(f"Starting action: {action_name} for model: {model_name}")
+
+            start_time = datetime.now(timezone.utc)
+            run_status = ""
+            error_details = ""
+
+            with mlflow.start_run(
+                run_name=action_name, experiment_id=experiment_id, nested=True
+            ):
+                try:
+                    cls = load_class(func_conf["class_path"])
+                    instance = cls(spark=spark, func_conf=func_conf)
+                    model_has_drift = instance.run(job_run_id=job_run_id)
+
+                    mlflow.log_param("model_name", model_name)
+                    mlflow.log_metric("has_drift", int(model_has_drift))
+                    run_status = "SUCCESS"
+
+                except Exception as e:
+                    run_status = "FAILED"
+                    error_details = str(e)[:500]
+                    logger.error(f"Action failed: {action_name} | {error_details}")
+                    send_gchat_failure(
+                        webhook_url=env_context["WEBHOOK_URL"],
+                        environment=env_name_notify,
+                        project=project_name,
+                        task=task_key,
+                        job_name=job_name,
+                        error_message=error_details,
+                        run_url=run_url,
+                    )
+                    raise
+
+                finally:
+                    end_time = datetime.now(timezone.utc)
+                    duration_minutes = round(
+                        (end_time - start_time).total_seconds() / 60, 2
+                    )
+                    mlflow.log_metric("duration_minutes", duration_minutes)
+                    mlflow.set_tag("run_status", run_status)
+
+                    audit_metrics = {
+                        "project_name": project_name,
+                        "model_name": model_name,
+                        "stage_name": stage_name,
+                        "task_name": task_key,
+                        "process_name": process_name,
+                        "task_run_id": task_run_id,
+                        "job_name": job_name,
+                        "job_id": job_id,
+                        "job_run_id": job_run_id,
+                        "run_status": run_status,
+                        "start_time": str(start_time),
+                        "end_time": str(end_time),
+                        "duration_mins": str(duration_minutes),
+                        "error_details": error_details,
+                    }
+                    write_to_audit_table(spark, audit_metrics, func_conf, audit_table)
+
+    logger.success(
+        f"Drift detection completed for {model_name} | has_drift={model_has_drift}"
+    )
+    return experiment_id, model_name, model_has_drift
+
+
+if __name__ == "__main__":
+    spark = SparkSession.builder.getOrCreate()
+    dbutils = DBUtils(spark) if DBUtils is not None else None
+
+    experiment_id, model_name, model_has_drift = main(spark=spark)
+    if dbutils is not None:
+        dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+        dbutils.jobs.taskValues.set(
+            key=f"{model_name}_has_drift", value=int(model_has_drift)
+        )

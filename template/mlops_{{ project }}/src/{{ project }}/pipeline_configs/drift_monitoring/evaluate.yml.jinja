@@ -1,0 +1,24 @@
+﻿# Drift evaluation â€” aggregates per-model results and optionally triggers retraining.
+
+version: '1.0'
+stage: drift_monitoring
+file: evaluate.yml
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: evaluate_drift
+    enable: true
+    functions:
+      class_path: {{ project }}.common.drift.drift_utils:DriftEvaluator
+      kwargs:
+        project_name: {{ project }}
+        process_name: drift_evaluation
+        drift_results_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ project }}_drift_results"
+        models:
+          - {{ model }}
+        auto_trigger:
+          # set to true to auto-trigger retraining on drift
+          enable: false
+          # replace with the Databricks job ID of the retraining pipeline
+          retraining_job_id: null
+          # trigger retraining if at least this many models have drift
+          min_drifted_models: 1

@@ -1,10 +1,15 @@
 import requests
-
 from loguru import logger
 
 
 def send_gchat_failure(
-    webhook_url, environment, project, task, job_name, error_message, run_url
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    task: str,
+    job_name: str,
+    error_message: str,
+    run_url: str,
 ):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
@@ -61,7 +66,13 @@ def send_gchat_failure(
 
 
 def send_gchat_inference_success(
-    webhook_url, environment, project, models, job_name, run_url, experiment_url=None
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
 ):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
@@ -116,14 +127,14 @@ def send_gchat_inference_success(
 
 
 def send_gchat_training_success(
-    webhook_url,
-    stage_name,
-    environment,
-    project,
-    models,
-    job_name,
-    run_url,
-    experiment_url=None,
+    webhook_url: str | None,
+    stage_name: str,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
 ):
     if webhook_url is None:
         logger.warning("No webhook URL provided, skipping Google Chat notification")
@@ -175,3 +186,80 @@ def send_gchat_training_success(
     response.raise_for_status()
 
     logger.info("✅ Google Chat training success alert sent successfully")
+
+
+def send_gchat_drift_summary(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    model_summaries: dict,
+    drifted_models: list,
+    drift_types: list,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    has_any_drift = bool(drifted_models)
+    title = "⚠️ Drift Detected" if has_any_drift else "✅ No Drift Detected"
+
+    models_bullets = ""
+    for model, info in model_summaries.items():
+        if isinstance(info, dict):
+            if info["has_drift"]:
+                types = (
+                    ", ".join(info["drift_types"]) if info["drift_types"] else "drift"
+                )
+                severity = info["top_severity"]
+                models_bullets += f"• <i>{model} → {types} [{severity}]</i><br>"
+            else:
+                models_bullets += f"• <i>{model} → no drift</i><br>"
+        else:
+            models_bullets += f"• <i>{model} → {info}</i><br>"
+
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "drift_summary",
+                "card": {
+                    "header": {
+                        "title": title,
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Models Summary:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+    icon = "⚠️" if has_any_drift else "✅"
+    logger.info(f"{icon} Google Chat drift summary sent successfully")

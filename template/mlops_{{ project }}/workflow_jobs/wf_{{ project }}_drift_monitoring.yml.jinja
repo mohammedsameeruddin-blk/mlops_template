@@ -1,0 +1,146 @@
+resources:
+  jobs:
+    drift_monitoring:
+      name: mlops_{{ project }}_drift_monitoring
+      tags:
+        project_name: "{{ project }}"
+
+      # Uncomment and configure to run on a schedule (cron syntax, UTC)
+      # trigger:
+      #   pause_status: UNPAUSED
+      #   periodic:
+      #     interval: 1
+      #     unit: WEEKS
+      
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - "../${var.data_science_project_library}"
+              - "../${var.mlops_project_library}"
+      
+      tasks:
+        - task_key: start_setup
+          environment_key: default
+          spark_python_task:
+            python_file: "../scripts/start_setup.py"
+            parameters:
+              - "--root_path"
+              - ${workspace.root_path}
+              - --runtime_env
+              - "${var.run_time_env}"
+              - --yml_task
+              - "start.yml"
+              - --project_name
+              - "{{ project }}"
+              - --model_name
+              - "none"
+              - --stage_name
+              - "drift_monitoring"
+              - --task_key
+              - '{% raw %}{{task.name}}{% endraw %}' # do not change this
+              - --task_run_id
+              - '{% raw %}{{task.run_id}}{% endraw %}' # do not change this
+              - --job_name
+              - '{% raw %}{{job.name}}{% endraw %}' # do not change this
+              - --job_id
+              - '{% raw %}{{job.id}}{% endraw %}' # do not change this
+              - --job_run_id
+              - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
+      
+        - task_key: {{ model }}_drift_detection
+          depends_on:
+            - task_key: start_setup
+          environment_key: default
+          spark_python_task:
+            python_file: "../scripts/drift_detection.py"
+            parameters:
+              - --root_path
+              - ${workspace.root_path}
+              - --runtime_env
+              - "${var.run_time_env}"
+              - --yml_task
+              - "drift.yml"
+              - --project_name
+              - "{{ project }}"
+              - --model_name
+              - "{{ model }}"
+              - --stage_name
+              - "drift_monitoring"
+              - --task_key
+              - '{% raw %}{{task.name}}{% endraw %}' # do not change this
+              - --task_run_id
+              - '{% raw %}{{task.run_id}}{% endraw %}' # do not change this
+              - --job_name
+              - '{% raw %}{{job.name}}{% endraw %}' # do not change this
+              - --job_id
+              - '{% raw %}{{job.id}}{% endraw %}' # do not change this
+              - --job_run_id
+              - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
+              - --experiment_id
+              - '{% raw %}{{tasks.start_setup.values.experiment_id}}{% endraw %}' # do not change this
+        
+        - task_key: evaluate_drift_results
+          depends_on:
+            - task_key: {{ model }}_drift_detection
+          environment_key: default
+          spark_python_task:
+            python_file: "../scripts/drift_evaluation.py"
+            parameters:
+              - --root_path
+              - ${workspace.root_path}
+              - --runtime_env
+              - "${var.run_time_env}"
+              - --yml_task
+              - "evaluate.yml"
+              - --project_name
+              - "{{ project }}"
+              - --model_name
+              - "none"
+              - --stage_name
+              - "drift_monitoring"
+              - --task_key
+              - '{% raw %}{{task.name}}{% endraw %}' # do not change this
+              - --task_run_id
+              - '{% raw %}{{task.run_id}}{% endraw %}' # do not change this
+              - --job_name
+              - '{% raw %}{{job.name}}{% endraw %}' # do not change this
+              - --job_id
+              - '{% raw %}{{job.id}}{% endraw %}' # do not change this
+              - --job_run_id
+              - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
+              - --experiment_id
+              - '{% raw %}{{tasks.{% endraw %}{{ model }}{% raw %}_drift_detection.values.experiment_id}}{% endraw %}' # do not change this
+        
+        - task_key: end_setup
+          depends_on:
+            - task_key: evaluate_drift_results
+          environment_key: default
+          spark_python_task:
+            python_file: "../scripts/end_setup.py"
+            parameters:
+              - --root_path
+              - ${workspace.root_path}
+              - --runtime_env
+              - "${var.run_time_env}"
+              - --yml_task
+              - "end.yml"
+              - --project_name
+              - "{{ project }}"
+              - --model_name
+              - "none"
+              - --stage_name
+              - "drift_monitoring"
+              - --task_key
+              - '{% raw %}{{task.name}}{% endraw %}' # do not change this
+              - --task_run_id
+              - '{% raw %}{{task.run_id}}{% endraw %}' # do not change this
+              - --job_name
+              - '{% raw %}{{job.name}}{% endraw %}' # do not change this
+              - --job_id
+              - '{% raw %}{{job.id}}{% endraw %}' # do not change this
+              - --job_run_id
+              - '{% raw %}{{job.run_id}}{% endraw %}' # do not change this
+              - --experiment_id
+              - '{% raw %}{{tasks.evaluate_drift_results.values.experiment_id}}{% endraw %}' # do not change this

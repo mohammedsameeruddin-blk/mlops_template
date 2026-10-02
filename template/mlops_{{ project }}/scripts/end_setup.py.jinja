@@ -1,15 +1,21 @@
-import importlib
 import argparse
-from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
+import importlib
+import json
 
 from loguru import logger
+from pyspark.sql import SparkSession
+
+try:
+    from pyspark.dbutils import DBUtils  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    DBUtils = None
 
 from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config,
 )
 from {{ project }}.common.utils.notify_utils import (
+    send_gchat_drift_summary,
     send_gchat_failure,
     send_gchat_training_success,
     send_gchat_inference_success,
@@ -22,7 +28,24 @@ def load_class(class_path: str):
     return getattr(module, class_name)
 
 
-def main(spark):
+def get_task_value(dbutils, task_key: str, key: str, default=None):
+    if dbutils is None:
+        logger.warning(
+            f"dbutils is unavailable while reading task value '{task_key}:{key}'"
+        )
+        return default
+
+    try:
+        return dbutils.jobs.taskValues.get(taskKey=task_key, key=key)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        logger.warning(
+            f"Could not read task value '{task_key}:{key}'; using default. Error: {exc}"
+        )
+        return default
+
+
+def main(spark, dbutils=None):
+    dbutils = dbutils or globals().get("dbutils")
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--root_path", required=True)
@@ -66,8 +89,10 @@ def main(spark):
         ]
         logger.info(f"Models registered: {models_registered_list}")
         for model_reg in models_registered_list:
-            spec_model_version = dbutils.jobs.taskValues.get(
-                taskKey=f"{model_reg}_training", key=model_reg
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_training",
+                key=model_reg,
             )
             models_and_versions_train[model_reg] = spec_model_version
     elif args.stage_name == "inference":
@@ -78,8 +103,10 @@ def main(spark):
         ]
         logger.info(f"Models used for inference: {models_used_list}")
         for model_reg in models_used_list:
-            spec_model_version = dbutils.jobs.taskValues.get(
-                taskKey=f"{model_reg}_inference", key=model_reg
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_inference",
+                key=model_reg,
             )
             models_and_versions_inference[model_reg] = spec_model_version
     elif args.stage_name == "retraining":
@@ -90,10 +117,45 @@ def main(spark):
         ]
         logger.info(f"Models registered: {models_registered_list}")
         for model_reg in models_registered_list:
-            spec_model_version = dbutils.jobs.taskValues.get(
-                taskKey=f"{model_reg}_retraining", key=model_reg
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_retraining",
+                key=model_reg,
             )
             models_and_versions_retrain[model_reg] = spec_model_version
+    elif args.stage_name == "drift_monitoring":
+        try:
+            drifted_models_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="drifted_models",
+            )
+            drift_types_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="drift_types",
+            )
+            model_summaries_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="model_summaries",
+            )
+            drift_drifted_models = (
+                [m for m in drifted_models_str.split(",") if m]
+                if drifted_models_str
+                else []
+            )
+            drift_drift_types = (
+                [t for t in drift_types_str.split(",") if t] if drift_types_str else []
+            )
+            drift_model_summaries = (
+                json.loads(model_summaries_str) if model_summaries_str else {}
+            )
+        except (ValueError, TypeError, AttributeError, KeyError):
+            logger.warning("Could not read drift summary task values; using defaults.")
+            drift_drifted_models = []
+            drift_drift_types = []
+            drift_model_summaries = {}
 
     # load config from TOML based on runtime_env
     env_context = load_project_config(project_name=project_name, env_name=runtime_env)
@@ -112,11 +174,8 @@ def main(spark):
 
     for aconf in actions_config:
         action_name = aconf["name"]
-        func_conf = aconf["functions"]
-        cls = load_class(func_conf["class_path"])
 
         logger.info(f"Starting action: {action_name}")
-
         error_details = ""
 
         workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
@@ -137,7 +196,6 @@ def main(spark):
 
         try:
             # assumes 'spark' is provided by Databricks environment
-            cls(spark=spark, func_conf=func_conf)
             if stage_name == "training":
                 send_gchat_training_success(
                     webhook_url=env_context["WEBHOOK_URL"],
@@ -170,6 +228,18 @@ def main(spark):
                     run_url=run_url,
                     experiment_url=experiment_url,
                 )
+            elif stage_name == "drift_monitoring":
+                send_gchat_drift_summary(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    model_summaries=drift_model_summaries,
+                    drifted_models=drift_drifted_models,
+                    drift_types=drift_drift_types,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
         except Exception as e:
             error_details = str(e)[:500]
             logger.error(f"Action failed: {action_name}")
@@ -191,7 +261,8 @@ def main(spark):
 
 if __name__ == "__main__":
     spark = SparkSession.builder.getOrCreate()
-    dbutils = DBUtils(spark)
+    dbutils = DBUtils(spark) if DBUtils is not None else None
 
     experiment_id, models_notify = main(spark=spark)
-    dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)
+    if dbutils is not None:
+        dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)

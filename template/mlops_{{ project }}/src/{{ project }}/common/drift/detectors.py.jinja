@@ -1,0 +1,521 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+import numpy as np
+import pandas as pd
+from loguru import logger
+
+
+@dataclass
+class DriftResult:
+    model_name: str
+    drift_type: str  # data_drift | prediction_drift | data_quality
+    detector_method: str  # tabular_drift | ks_test | quality_check
+    feature_name: str  # feature name or 'overall'
+    drift_score: float
+    p_value: float | None
+    threshold: float
+    is_drift: bool
+    severity: str  # none | minor | major
+    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            "model_name": self.model_name,
+            "drift_type": self.drift_type,
+            "detector_method": self.detector_method,
+            "feature_name": self.feature_name,
+            "drift_score": float(self.drift_score),
+            "p_value": float(self.p_value) if self.p_value is not None else None,
+            "threshold": float(self.threshold),
+            "is_drift": bool(self.is_drift),
+            "severity": self.severity,
+            "checked_at": str(self.checked_at),
+        }
+
+
+def _compute_severity(
+    score: float, minor_threshold: float, major_threshold: float
+) -> str:
+    if score >= major_threshold:
+        return "major"
+    if score >= minor_threshold:
+        return "minor"
+    return "none"
+
+
+class DataDriftDetector:
+    """
+    Detects feature distribution drift using alibi-detect TabularDrift.
+    Handles numerical features with KS test and categorical with chi-square automatically.
+    """
+
+    def __init__(
+        self,
+        p_val: float = 0.05,
+        correction: str = "bonferroni",
+        feature_columns: list | None = None,
+        severity_minor: float = 0.1,
+        severity_major: float = 0.25,
+    ):
+        self.p_val = p_val
+        self.correction = correction
+        self.feature_columns = feature_columns or ["any"]
+        self.severity_minor = severity_minor
+        self.severity_major = severity_major
+        self._detector = None
+
+    def _select_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        if len(self.feature_columns) == 1 and self.feature_columns[0].lower() == "any":
+            return df
+        cols = [c for c in self.feature_columns if c in df.columns]
+        if not cols:
+            logger.warning(
+                "None of the configured feature_columns found in data; using all columns."
+            )
+            return df
+        return df[cols]
+
+    def fit(self, reference_df: pd.DataFrame) -> None:
+        from alibi_detect.cd import TabularDrift
+
+        ref = self._select_columns(reference_df)
+        self._reference_columns = list(ref.columns)
+        self._detector = TabularDrift(
+            x_ref=ref.values.astype(float),
+            p_val=self.p_val,
+            correction=self.correction,
+        )
+        logger.info(
+            f"DataDriftDetector fitted on {len(self._reference_columns)} features."
+        )
+
+    def detect(self, current_df: pd.DataFrame, model_name: str) -> list[DriftResult]:
+        if self._detector is None:
+            raise RuntimeError("Call fit() before detect().")
+
+        cur = current_df[self._reference_columns].astype(float)
+        preds = self._detector.predict(
+            cur.values,
+            drift_type="batch",
+            return_p_val=True,
+            return_distance=True,
+        )
+
+        results = []
+        feature_data = preds["data"]
+
+        for i, col in enumerate(self._reference_columns):
+            score = float(feature_data["distance"][i])
+            pval = (
+                float(feature_data["p_val"][i])
+                if feature_data.get("p_val") is not None
+                else None
+            )
+            is_drift = pval is not None and pval < self.p_val
+            severity = _compute_severity(
+                score, self.severity_minor, self.severity_major
+            )
+            results.append(
+                DriftResult(
+                    model_name=model_name,
+                    drift_type="data_drift",
+                    detector_method="tabular_drift",
+                    feature_name=col,
+                    drift_score=score,
+                    p_value=pval,
+                    threshold=self.p_val,
+                    is_drift=is_drift,
+                    severity=severity,
+                )
+            )
+
+        overall_score = float(np.mean([r.drift_score for r in results]))
+        overall_drift = sum(1 for r in results if r.is_drift) > 0
+        overall_severity = _compute_severity(
+            overall_score, self.severity_minor, self.severity_major
+        )
+        results.append(
+            DriftResult(
+                model_name=model_name,
+                drift_type="data_drift",
+                detector_method="tabular_drift",
+                feature_name="overall",
+                drift_score=overall_score,
+                p_value=None,
+                threshold=self.p_val,
+                is_drift=overall_drift,
+                severity=overall_severity,
+            )
+        )
+
+        drifted = sum(1 for r in results if r.is_drift and r.feature_name != "overall")
+        logger.info(
+            f"[{model_name}] DataDrift: {drifted}/{len(self._reference_columns)} features drifted."
+        )
+        return results
+
+
+class PredictionDriftDetector:
+    """
+    Detects shift in model output score distribution using KSDrift.
+    """
+
+    def __init__(
+        self,
+        p_val: float = 0.05,
+        score_column: str = "prediction_score",
+        severity_minor: float = 0.1,
+        severity_major: float = 0.25,
+    ):
+        self.p_val = p_val
+        self.score_column = score_column
+        self.severity_minor = severity_minor
+        self.severity_major = severity_major
+        self._detector = None
+
+    def fit(self, reference_scores: np.ndarray) -> None:
+        from alibi_detect.cd import KSDrift
+
+        self._detector = KSDrift(x_ref=reference_scores.astype(float), p_val=self.p_val)
+        logger.info(
+            f"PredictionDriftDetector fitted on {len(reference_scores)} reference scores."
+        )
+
+    def detect(self, current_df: pd.DataFrame, model_name: str) -> list[DriftResult]:
+        if self._detector is None:
+            raise RuntimeError("Call fit() before detect().")
+
+        if self.score_column not in current_df.columns:
+            logger.warning(
+                f"Score column '{self.score_column}' not found; skipping prediction drift."
+            )
+            return []
+
+        scores = current_df[self.score_column].dropna().astype(float).values
+        preds = self._detector.predict(
+            scores, drift_type="batch", return_p_val=True, return_distance=True
+        )
+
+        score = float(preds["data"]["distance"][0])
+        pval = (
+            float(preds["data"]["p_val"][0])
+            if preds["data"].get("p_val") is not None
+            else None
+        )
+        is_drift = bool(preds["data"]["is_drift"])
+        severity = _compute_severity(score, self.severity_minor, self.severity_major)
+
+        logger.info(
+            f"[{model_name}] PredictionDrift: is_drift={is_drift}, score={score:.4f}"
+        )
+        return [
+            DriftResult(
+                model_name=model_name,
+                drift_type="prediction_drift",
+                detector_method="ks_test",
+                feature_name=self.score_column,
+                drift_score=score,
+                p_value=pval,
+                threshold=self.p_val,
+                is_drift=is_drift,
+                severity=severity,
+            )
+        ]
+
+
+class DataQualityDetector:
+    """
+    Checks for data quality drift: null rate increases and value range violations.
+    """
+
+    def __init__(
+        self,
+        null_threshold: float = 0.05,
+        severity_minor: float = 0.05,
+        severity_major: float = 0.15,
+    ):
+        self.null_threshold = null_threshold
+        self.severity_minor = severity_minor
+        self.severity_major = severity_major
+        self._reference_stats: dict = {}
+
+    def fit(self, reference_df: pd.DataFrame) -> None:
+        self._reference_stats = {
+            col: {
+                "null_rate": float(reference_df[col].isnull().mean()),
+                "min": float(reference_df[col].min())
+                if pd.api.types.is_numeric_dtype(reference_df[col])
+                else None,
+                "max": float(reference_df[col].max())
+                if pd.api.types.is_numeric_dtype(reference_df[col])
+                else None,
+            }
+            for col in reference_df.columns
+        }
+        logger.info(
+            f"DataQualityDetector fitted on {len(self._reference_stats)} features."
+        )
+
+    def detect(self, current_df: pd.DataFrame, model_name: str) -> list[DriftResult]:
+        if not self._reference_stats:
+            raise RuntimeError("Call fit() before detect().")
+
+        results = []
+        for col, ref_stats in self._reference_stats.items():
+            if col not in current_df.columns:
+                continue
+
+            cur_null_rate = float(current_df[col].isnull().mean())
+            null_delta = abs(cur_null_rate - ref_stats["null_rate"])
+            is_null_drift = null_delta > self.null_threshold
+            severity = _compute_severity(
+                null_delta, self.severity_minor, self.severity_major
+            )
+            results.append(
+                DriftResult(
+                    model_name=model_name,
+                    drift_type="data_quality",
+                    detector_method="null_rate_check",
+                    feature_name=col,
+                    drift_score=round(null_delta, 6),
+                    p_value=None,
+                    threshold=self.null_threshold,
+                    is_drift=is_null_drift,
+                    severity=severity,
+                )
+            )
+
+            if (
+                pd.api.types.is_numeric_dtype(current_df[col])
+                and ref_stats["min"] is not None
+            ):
+                cur_min = float(current_df[col].min())
+                cur_max = float(current_df[col].max())
+                ref_range = ref_stats["max"] - ref_stats["min"] or 1.0
+                range_violation = max(
+                    max(0.0, ref_stats["min"] - cur_min) / ref_range,
+                    max(0.0, cur_max - ref_stats["max"]) / ref_range,
+                )
+                is_range_drift = range_violation > 0.0
+                sev = _compute_severity(
+                    range_violation, self.severity_minor, self.severity_major
+                )
+                results.append(
+                    DriftResult(
+                        model_name=model_name,
+                        drift_type="data_quality",
+                        detector_method="range_check",
+                        feature_name=col,
+                        drift_score=round(range_violation, 6),
+                        p_value=None,
+                        threshold=0.0,
+                        is_drift=is_range_drift,
+                        severity=sev,
+                    )
+                )
+
+        drifted_cols = {r.feature_name for r in results if r.is_drift}
+        logger.info(
+            f"[{model_name}] DataQuality: {len(drifted_cols)} features with quality drift."
+        )
+        return results
+
+
+class DriftOrchestrator:
+    """
+    Generic orchestrator that runs all enabled drift detectors for a single model.
+    Referenced from pipeline YAML via class_path — consistent with the plugin architecture.
+    """
+
+    def __init__(self, spark, func_conf: dict):
+        self.spark = spark
+        self.func_conf = func_conf
+        kwargs = func_conf["kwargs"]
+
+        self.model_name: str = kwargs["model_name"]
+        self.drift_results_table: str = kwargs["drift_results_table"]
+
+        detector_cfg = kwargs.get("detectors", {})
+        ref_cfg = kwargs.get("reference", {})
+        cur_cfg = kwargs.get("current", {})
+        threshold_cfg = kwargs.get("thresholds", {})
+
+        severity_minor = float(threshold_cfg.get("severity_minor", 0.1))
+        severity_major = float(threshold_cfg.get("severity_major", 0.25))
+        self.drift_percentage_threshold = float(
+            threshold_cfg.get("drift_percentage", 30)
+        )
+
+        self._detectors = []
+
+        if detector_cfg.get("data_drift", {}).get("enable", True):
+            dd_cfg = detector_cfg["data_drift"]
+            self._detectors.append(
+                (
+                    "data_drift",
+                    DataDriftDetector(
+                        p_val=float(dd_cfg.get("p_val", 0.05)),
+                        correction=dd_cfg.get("correction", "bonferroni"),
+                        feature_columns=dd_cfg.get("feature_columns", ["any"]),
+                        severity_minor=severity_minor,
+                        severity_major=severity_major,
+                    ),
+                )
+            )
+
+        if detector_cfg.get("prediction_drift", {}).get("enable", True):
+            pd_cfg = detector_cfg["prediction_drift"]
+            self._detectors.append(
+                (
+                    "prediction_drift",
+                    PredictionDriftDetector(
+                        p_val=float(pd_cfg.get("p_val", 0.05)),
+                        score_column=pd_cfg.get("score_column", "prediction_score"),
+                        severity_minor=severity_minor,
+                        severity_major=severity_major,
+                    ),
+                )
+            )
+
+        if detector_cfg.get("data_quality", {}).get("enable", True):
+            dq_cfg = detector_cfg["data_quality"]
+            self._detectors.append(
+                (
+                    "data_quality",
+                    DataQualityDetector(
+                        null_threshold=float(dq_cfg.get("null_threshold", 0.05)),
+                        severity_minor=severity_minor,
+                        severity_major=severity_major,
+                    ),
+                )
+            )
+
+        self._ref_feature_table: str = ref_cfg.get("feature_table", "")
+        self._cur_feature_table: str = cur_cfg.get("feature_table", "")
+        self._cur_predictions_table: str | None = cur_cfg.get("predictions_table")
+
+    def _load_reference_features(self) -> pd.DataFrame:
+        logger.info(f"Loading reference features from: {self._ref_feature_table}")
+        return self.spark.read.table(self._ref_feature_table).toPandas()
+
+    def _load_current_features(self) -> pd.DataFrame:
+        logger.info(f"Loading current features from: {self._cur_feature_table}")
+        sdf = self.spark.read.table(self._cur_feature_table)
+        if "_rescued_data" in sdf.columns:
+            sdf = sdf.drop("_rescued_data")
+        return sdf.toPandas()
+
+    def _load_current_predictions(self) -> pd.DataFrame | None:
+        if not self._cur_predictions_table:
+            return None
+        logger.info(f"Loading current predictions from: {self._cur_predictions_table}")
+        return self.spark.read.table(self._cur_predictions_table).toPandas()
+
+    def _write_results(self, results: list[DriftResult], job_run_id: str) -> None:
+        checked_at = str(datetime.now(timezone.utc))
+        records = [r.to_dict() for r in results]
+        for rec in records:
+            rec["job_run_id"] = job_run_id
+            rec["checked_at"] = checked_at
+        pdf = pd.DataFrame(records)
+        sdf = self.spark.createDataFrame(pdf)
+        self.spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {self.drift_results_table} (
+                model_name STRING,
+                drift_type STRING,
+                detector_method STRING,
+                feature_name STRING,
+                drift_score DOUBLE,
+                p_value DOUBLE,
+                threshold DOUBLE,
+                is_drift BOOLEAN,
+                severity STRING,
+                checked_at STRING,
+                job_run_id STRING
+            ) USING DELTA
+        """)
+        sdf.write.format("delta").mode("append").saveAsTable(self.drift_results_table)
+        logger.info(
+            f"Drift results written to {self.drift_results_table} ({len(records)} rows)."
+        )
+
+    def run(self, job_run_id: str = "unknown") -> bool:
+        """Run all enabled detectors; return True if any drift detected."""
+        ref_features = self._load_reference_features()
+        cur_features = self._load_current_features()
+        cur_predictions = self._load_current_predictions()
+
+        if cur_features.empty:
+            logger.warning(
+                f"[{self.model_name}] No current feature data found; skipping drift check."
+            )
+            return False
+
+        all_results: list[DriftResult] = []
+
+        for dtype, detector in self._detectors:
+            if dtype == "prediction_drift":
+                if cur_predictions is None or cur_predictions.empty:
+                    logger.warning(
+                        f"[{self.model_name}] No prediction data; skipping prediction drift."
+                    )
+                    continue
+                score_col = detector.score_column
+                if score_col not in ref_features.columns:
+                    scores = (
+                        cur_predictions[score_col].dropna().values
+                        if score_col in cur_predictions.columns
+                        else None
+                    )
+                    if scores is None or len(scores) < 20:
+                        logger.warning(
+                            f"[{self.model_name}] Insufficient prediction scores for drift check."
+                        )
+                        continue
+                    mid = len(scores) // 2
+                    detector.fit(scores[:mid])
+                    results = detector.detect(
+                        cur_predictions.iloc[mid:], self.model_name
+                    )
+                else:
+                    ref_scores = ref_features[score_col].dropna().values
+                    detector.fit(ref_scores)
+                    results = detector.detect(cur_predictions, self.model_name)
+                all_results.extend(results)
+            elif dtype == "data_quality":
+                detector.fit(ref_features)
+                results = detector.detect(cur_features, self.model_name)
+                all_results.extend(results)
+            else:  # data_drift
+                numeric_cols = ref_features.select_dtypes(
+                    include=[np.number]
+                ).columns.tolist()
+                ref_numeric = ref_features[numeric_cols]
+                cur_numeric = cur_features[
+                    [c for c in numeric_cols if c in cur_features.columns]
+                ]
+
+                if cur_numeric.empty:
+                    logger.warning(
+                        f"[{self.model_name}] No matching numeric columns in current data."
+                    )
+                    continue
+
+                detector.fit(ref_numeric)
+                results = detector.detect(cur_numeric, self.model_name)
+                all_results.extend(results)
+
+        if all_results:
+            self._write_results(all_results, job_run_id)
+
+        drift_flags = [
+            r.is_drift
+            for r in all_results
+            if r.feature_name == "overall" or r.drift_type == "prediction_drift"
+        ]
+        has_drift = any(drift_flags)
+        logger.info(f"[{self.model_name}] Overall drift detected: {has_drift}")
+        return has_drift

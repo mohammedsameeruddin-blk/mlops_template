@@ -1,0 +1,8 @@
+﻿# Drift detection â€” data loading is handled directly by DriftOrchestrator via Spark table reads.
+# This file is intentionally minimal; it records the stage and audit table for traceability.
+
+version: '1.0'
+stage: drift_monitoring
+file: data.yml
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions: []
