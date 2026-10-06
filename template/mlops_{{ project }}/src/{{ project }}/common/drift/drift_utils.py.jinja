@@ -3,6 +3,27 @@ from __future__ import annotations
 from loguru import logger
 
 
+def get_retraining_job_id(job_name: str) -> str:
+    from databricks.sdk import WorkspaceClient
+
+    w = WorkspaceClient()
+    job_id = None
+    for job in w.jobs.list(expand_tasks=False):
+        if job.settings and job.settings.name:
+            current_name = job.settings.name.strip()
+
+            # Matches:
+            if current_name == job_name or current_name.endswith(f" {job_name}"):
+                print(f"Target job found in this environment: {current_name}")
+                job_id = job.job_id
+                break
+
+    if job_id:
+        logger.info(f"Found the Job ID: {job_id}")
+        return job_id
+    raise ValueError(f"No job found with name: {job_name}")
+
+
 class DriftEvaluator:
     """
     Aggregates per-model drift results from the drift results table,
@@ -72,21 +93,22 @@ class DriftEvaluator:
         triggered = False
         if self.auto_trigger_cfg.get("enable", False) and drifted_models:
             min_drifted = int(self.auto_trigger_cfg.get("min_drifted_models", 1))
-            retraining_job_id = self.auto_trigger_cfg.get("retraining_job_id")
-            if len(drifted_models) >= min_drifted and retraining_job_id:
+            retraining_job_name = self.auto_trigger_cfg.get("retraining_job_name")
+            if not retraining_job_name:
+                logger.warning(
+                    "auto_trigger.enable=true but retraining_job_name is not set; skipping trigger."
+                )
+            elif len(drifted_models) >= min_drifted:
                 try:
+                    retraining_job_id = get_retraining_job_id(retraining_job_name)
                     run_id = trigger_retraining_job(
                         workspace_url=workspace_url,
                         job_id=int(retraining_job_id),
                     )
                     triggered = True
                     logger.info(f"Retraining pipeline triggered - run_id: {run_id}")
-                except Exception as exc:
-                    logger.error(f"Failed to trigger retraining: {exc}")
-            elif not retraining_job_id:
-                logger.warning(
-                    "auto_trigger.enable=true but retraining_job_id is not set; skipping trigger."
-                )
+                except Exception as e:  # noqa: BLE001
+                    logger.error(f"Failed to trigger retraining: {e}")
 
         return {
             "drifted_models": drifted_models,

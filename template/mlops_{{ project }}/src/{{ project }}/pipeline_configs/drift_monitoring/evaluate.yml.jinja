@@ -19,6 +19,6 @@ actions:
           # set to true to auto-trigger retraining on drift
           enable: false
           # replace with the Databricks job ID of the retraining pipeline
-          retraining_job_id: null
+          retraining_job_name: mlops_{{ project }}_retraining
           # trigger retraining if at least this many models have drift
           min_drifted_models: 1
