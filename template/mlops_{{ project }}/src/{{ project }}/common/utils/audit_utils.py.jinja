@@ -11,7 +11,8 @@ def is_table_exists(spark, table_name):
     try:
         spark.table(table_name)
         return True
-    except (AttributeError, KeyError, RuntimeError, ValueError):
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not check if table exists. Error: {e}")
         return False
 
 

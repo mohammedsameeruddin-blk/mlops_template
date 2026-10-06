@@ -84,5 +84,7 @@ def model_explain(
         )  # not applicable for linear model
         plt.savefig(file_name3, bbox_inches="tight")
         plt.clf()
-    except (ValueError, TypeError, IndexError):
-        logger.warning("Could not generate the individual data explainability plot")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            f"Could not generate the individual data explainability plot. Error: {e}"
+        )

@@ -88,9 +88,9 @@ def cleanup_pipeline_setup(spark, func_conf):
             logger.info(
                 f"Cleaned-up the project output folder - `{project_output_path}`"
             )
-        except OSError as exc:
+        except OSError as e:
             logger.warning(
-                f"Failed to clean up the project output folder `{project_output_path}`: {exc}"
+                f"Failed to clean up the project output folder `{project_output_path}`: {e}"
             )
 
         return True

@@ -37,9 +37,9 @@ def get_task_value(dbutils, task_key: str, key: str, default=None):
 
     try:
         return dbutils.jobs.taskValues.get(taskKey=task_key, key=key)
-    except (KeyError, ValueError, RuntimeError) as exc:
+    except Exception as e:  # noqa: BLE001
         logger.warning(
-            f"Could not read task value '{task_key}:{key}'; using default. Error: {exc}"
+            f"Could not read task value '{task_key}:{key}'; using default. Error: {e}"
         )
         return default
 
@@ -151,8 +151,10 @@ def main(spark, dbutils=None):
             drift_model_summaries = (
                 json.loads(model_summaries_str) if model_summaries_str else {}
             )
-        except (ValueError, TypeError, AttributeError, KeyError):
-            logger.warning("Could not read drift summary task values; using defaults.")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"Could not read drift summary task values; using defaults. Error: {e}"
+            )
             drift_drifted_models = []
             drift_drift_types = []
             drift_model_summaries = {}

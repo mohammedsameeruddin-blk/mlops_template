@@ -93,8 +93,10 @@ def main(spark, dbutils=None):
                 taskKey=f"{m}_drift_detection", key=f"{m}_has_drift"
             )
             per_model_drift[m] = bool(int(flag))
-        except (AttributeError, KeyError, NameError, TypeError, ValueError):
-            logger.warning(f"Could not read task value for {m}; assuming no drift.")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"Could not read task value for {m}; assuming no drift. Error: {e}"
+            )
             per_model_drift[m] = False
 
     drifted_models = [m for m, d in per_model_drift.items() if d]

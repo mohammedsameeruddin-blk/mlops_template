@@ -7,7 +7,8 @@ def feature_table_exists(fs, table_name):
     try:
         fs.get_table(table_name)
         return True
-    except (ValueError, KeyError):
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not check if feature table exists. Error: {e}")
         return False
 
 
