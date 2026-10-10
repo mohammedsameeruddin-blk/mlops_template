@@ -1,6 +1,6 @@
 # MLOps CLI Tool
 
-CLI tool for managing MLOps projects — add and remove datasets and models.
+CLI tool for managing MLOps projects - add and remove datasets and models.
 
 ## Installation
 
@@ -73,7 +73,7 @@ mlops-cli add-model /path/to/project --model-name <name>
 - `pipeline_configs/drift_monitoring/<model>/drift.yml`
 
 **Updates:**
-- `pipeline_configs/drift_monitoring/evaluate.yml` — appends model to `models:` list
+- `pipeline_configs/drift_monitoring/evaluate.yml` - appends model to `models:` list
 - `workflow_jobs/wf_<project>_training.yml`
 - `workflow_jobs/wf_<project>_inference.yml`
 - `workflow_jobs/wf_<project>_retraining.yml`
@@ -102,7 +102,7 @@ mlops-cli remove-model /path/to/project --model-name <name>
 - `pipeline_configs/drift_monitoring/<model>/`
 
 **Updates:**
-- `pipeline_configs/drift_monitoring/evaluate.yml` — removes model from `models:` list
+- `pipeline_configs/drift_monitoring/evaluate.yml` - removes model from `models:` list
 - `workflow_jobs/wf_<project>_training.yml`
 - `workflow_jobs/wf_<project>_inference.yml`
 - `workflow_jobs/wf_<project>_retraining.yml`

@@ -122,7 +122,7 @@ class ModelFileGenerator:
         if data_yml.exists():
             return
         content = (
-            "# Drift detection — data loading is handled directly by DriftOrchestrator via Spark table reads.\n"
+            "# Drift detection - data loading is handled directly by DriftOrchestrator via Spark table reads.\n"
             "# This file is intentionally minimal; it records the stage and audit table for traceability.\n\n"
             "version: '1.0'\n"
             "stage: drift_monitoring\n"
@@ -138,7 +138,7 @@ class ModelFileGenerator:
         if not evaluate_yml.exists():
             raise FileNotFoundError(f"{evaluate_yml} does not exist")
             # content = (
-            #     "# Drift evaluation — aggregates per-model results and optionally triggers retraining.\n\n"
+            #     "# Drift evaluation - aggregates per-model results and optionally triggers retraining.\n\n"
             #     "version: '1.0'\n"
             #     "stage: drift_monitoring\n"
             #     "file: evaluate.yml\n"
