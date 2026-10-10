@@ -50,7 +50,7 @@ class DriftEvaluator:
         pdf = sdf.filter(sdf["job_run_id"] == job_run_id).toPandas()
 
         if pdf.empty:
-            logger.warning("No drift results found for this run — skipping evaluation.")
+            logger.warning("No drift results found for this run - skipping evaluation.")
             return {
                 "drifted_models": [],
                 "drift_types": [],

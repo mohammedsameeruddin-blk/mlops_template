@@ -327,7 +327,7 @@ class DataQualityDetector:
 class DriftOrchestrator:
     """
     Generic orchestrator that runs all enabled drift detectors for a single model.
-    Referenced from pipeline YAML via class_path — consistent with the plugin architecture.
+    Referenced from pipeline YAML via class_path - consistent with the plugin architecture.
     """
 
     def __init__(self, spark, func_conf: dict):
