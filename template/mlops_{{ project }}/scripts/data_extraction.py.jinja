@@ -91,7 +91,7 @@ def main(spark):
 
             logger.info(f"Starting action: {action_name}")
 
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(tz=timezone.utc)
             run_status = ""
             error_details = ""
 

@@ -83,7 +83,7 @@ def main(spark):
         which_file=yml_task,
     )
 
-    formatted_string = datetime.now(timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
+    formatted_string = datetime.now(tz=timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
     experiment_name = f"MLOps_{task_config['mlflow_experiment_name']}_{stage_name}_{runtime_env}_{formatted_string}"
 
     # Create or set MLflow experiment

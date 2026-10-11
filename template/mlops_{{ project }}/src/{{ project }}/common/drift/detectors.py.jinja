@@ -19,7 +19,7 @@ class DriftResult:
     threshold: float
     is_drift: bool
     severity: str  # none | minor | major
-    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    checked_at: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -415,7 +415,7 @@ class DriftOrchestrator:
         return self.spark.read.table(self._cur_predictions_table).toPandas()
 
     def _write_results(self, results: list[DriftResult], job_run_id: str) -> None:
-        checked_at = str(datetime.now(timezone.utc))
+        checked_at = str(datetime.now(tz=timezone.utc))
         records = [r.to_dict() for r in results]
         for rec in records:
             rec["job_run_id"] = job_run_id

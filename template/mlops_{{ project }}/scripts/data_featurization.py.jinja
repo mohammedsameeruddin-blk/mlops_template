@@ -20,7 +20,7 @@ from {{ project }}.common.utils.config_utils import (
     load_project_config,
     load_task_config,
 )
-from transaction_fraud_detection.common.utils.feature_utils import (
+from {{ project }}.common.utils.feature_utils import (
     create_or_update_feature_data,
 )
 from {{ project }}.common.utils.notify_utils import send_gchat_failure
@@ -105,7 +105,7 @@ def main(spark):
 
             logger.info(f"Starting action: {action_name}")
 
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(tz=timezone.utc)
             run_status = ""
             error_details = ""
 

@@ -17,8 +17,10 @@ from {{ project }}.common.utils.config_utils import (
 from {{ project }}.common.utils.notify_utils import (
     send_gchat_drift_summary,
     send_gchat_failure,
-    send_gchat_training_success,
     send_gchat_inference_success,
+    send_gchat_promotion_success,
+    send_gchat_serving_success,
+    send_gchat_training_success,
 )
 
 
@@ -63,6 +65,8 @@ def main(spark, dbutils=None):
     # optional args
     parser.add_argument("--models_registered", default="none")
     parser.add_argument("--models_used", default="none")
+    parser.add_argument("--models_served", default="none")
+    parser.add_argument("--models_promoted", default="none")
 
     args = parser.parse_args()
     runtime_env = args.runtime_env.lower()
@@ -81,6 +85,8 @@ def main(spark, dbutils=None):
     models_and_versions_train = {}
     models_and_versions_inference = {}
     models_and_versions_retrain = {}
+    models_and_versions_serving = {}
+    models_and_versions_promotion = {}
     if args.stage_name == "training":
         models_registered_list = [
             m.strip()
@@ -123,6 +129,50 @@ def main(spark, dbutils=None):
                 key=model_reg,
             )
             models_and_versions_retrain[model_reg] = spec_model_version
+    elif args.stage_name == "serving":
+        models_served_list = [
+            m.strip()
+            for m in args.models_served.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models served: {models_served_list}")
+        for model in models_served_list:
+            endpoint_name = get_task_value(
+                dbutils,
+                task_key=f"{model}_serving",
+                key=f"{model}_endpoint",
+            )
+            strategy = get_task_value(
+                dbutils,
+                task_key=f"{model}_serving",
+                key=f"{model}_strategy",
+            )
+            models_and_versions_serving[model] = {
+                "endpoint": endpoint_name,
+                "strategy": strategy,
+            }
+    elif args.stage_name == "promotion":
+        models_promoted_list = [
+            m.strip()
+            for m in args.models_promoted.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models promoted: {models_promoted_list}")
+        for model in models_promoted_list:
+            promoted_version = get_task_value(
+                dbutils,
+                task_key=f"{model}_promotion",
+                key=f"{model}_promoted",
+            )
+            strategy = get_task_value(
+                dbutils,
+                task_key=f"{model}_promotion",
+                key=f"{model}_strategy",
+            )
+            models_and_versions_promotion[model] = {
+                "version": promoted_version,
+                "strategy": strategy,
+            }
     elif args.stage_name == "drift_monitoring":
         try:
             drifted_models_str = get_task_value(
@@ -190,6 +240,10 @@ def main(spark, dbutils=None):
             models_notify = models_and_versions_inference
         elif stage_name == "retraining":
             models_notify = models_and_versions_retrain
+        elif stage_name == "serving":
+            models_notify = models_and_versions_serving
+        elif stage_name == "promotion":
+            models_notify = models_and_versions_promotion
         experiment_url = (
             f"{workspace_url}/#mlflow/experiments/{experiment_id}"
             if experiment_id
@@ -223,6 +277,26 @@ def main(spark, dbutils=None):
                 send_gchat_training_success(
                     webhook_url=env_context["WEBHOOK_URL"],
                     stage_name=stage_name,
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "serving":
+                send_gchat_serving_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "promotion":
+                send_gchat_promotion_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
                     environment=env_name_notify,
                     project=project_name,
                     models=models_notify,

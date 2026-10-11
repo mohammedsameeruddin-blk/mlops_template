@@ -105,7 +105,7 @@ def log_experiment_details(spark, experiment_id, model_name, stage_name, func_co
 
     table_name = func_conf["kwargs"]["outputs"]["databricks_table"]
 
-    insert_update_timestamp = datetime.now(timezone.utc).isoformat()
+    insert_update_timestamp = datetime.now(tz=timezone.utc).isoformat()
 
     df = spark.createDataFrame(
         [

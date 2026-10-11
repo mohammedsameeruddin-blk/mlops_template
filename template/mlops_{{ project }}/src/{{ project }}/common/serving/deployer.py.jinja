@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+from loguru import logger
+from mlflow.tracking import MlflowClient
+
+
+class ServingDeployer:
+    """
+    Creates or updates a Databricks Model Serving endpoint for a single model.
+    Supports three deployment strategies: direct, blue_green, canary.
+    Referenced from pipeline YAML via class_path.
+    """
+
+    def __init__(self, spark, func_conf: dict):
+        self.spark = spark
+        self.func_conf = func_conf
+        kwargs = func_conf["kwargs"]
+
+        self.model_registry_name: str = kwargs["model_registry_name"]
+        self.endpoint_name: str = kwargs["endpoint_name"]
+        self._model_short_name = self.model_registry_name.split(".")[-1]
+        self.model_name: str = kwargs.get("model_name", self._model_short_name)
+
+        deployment = kwargs.get("deployment", {})
+        self.strategy: str = deployment.get(
+            "strategy", "direct"
+        )  # defaults to "direct"
+        self.workload_size: str = deployment.get("workload_size", "Small")
+        self.scale_to_zero: bool = bool(deployment.get("scale_to_zero", True))
+
+        canary_cfg = deployment.get("canary", {})
+        self.canary_initial_pct: int = int(canary_cfg.get("initial_traffic_pct", 10))
+
+    def run(self, job_run_id: str) -> dict:
+        from databricks.sdk import WorkspaceClient
+        from databricks.sdk.service.serving import (
+            EndpointCoreConfigInput,
+            Route,
+            TrafficConfig,
+        )
+
+        mlflow_client = MlflowClient()
+        w = WorkspaceClient()
+
+        # Get @challenger version - must exist before deployment
+        try:
+            challenger_info = mlflow_client.get_model_version_by_alias(
+                self.model_registry_name, "challenger"
+            )
+        except Exception as e:
+            raise ValueError(
+                f"No @challenger alias found for {self.model_registry_name}. "
+                "Run training/retraining first."
+            ) from e
+
+        challenger_ver = challenger_info.version
+        challenger_served_name = f"{self._model_short_name}-v{challenger_ver}"
+
+        # Check if endpoint exists
+        endpoint_exists = True
+        try:
+            w.serving_endpoints.get(self.endpoint_name)
+        except Exception:  # noqa: BLE001
+            endpoint_exists = False
+
+        if not endpoint_exists:
+            logger.info(
+                f"[{self.endpoint_name}] Creating new endpoint with v{challenger_ver} at 100%"
+            )
+            config = EndpointCoreConfigInput(
+                name=self.endpoint_name,
+                served_entities=[
+                    self._make_entity(challenger_served_name, challenger_ver)
+                ],
+                traffic_config=TrafficConfig(
+                    routes=[
+                        Route(
+                            served_model_name=challenger_served_name,
+                            traffic_percentage=100,
+                        )
+                    ]
+                ),
+            )
+            w.serving_endpoints.create(name=self.endpoint_name, config=config)
+            self._promote(mlflow_client, challenger_ver)
+            return {
+                "model_name": self.model_name,
+                "model_registry_name": self.model_registry_name,
+                "endpoint_name": self.endpoint_name,
+                "strategy": "direct",
+                "challenger_version": challenger_ver,
+                "challenger_served_name": challenger_served_name,
+                "champion_version": None,
+                "champion_served_name": None,
+                "current_traffic": {challenger_served_name: 100},
+                "workload_size": self.workload_size,
+                "scale_to_zero": self.scale_to_zero,
+                "promoted": True,
+            }
+
+        # Endpoint exists - apply strategy
+        if self.strategy == "direct":
+            return self._deploy_direct(
+                w, mlflow_client, challenger_ver, challenger_served_name
+            )
+        elif self.strategy == "blue_green":
+            return self._deploy_blue_green(
+                w, mlflow_client, challenger_ver, challenger_served_name
+            )
+        elif self.strategy == "canary":
+            return self._deploy_canary(
+                w, mlflow_client, challenger_ver, challenger_served_name
+            )
+        else:
+            raise ValueError(
+                f"Unknown deployment strategy: {self.strategy!r}. Use direct | blue_green | canary."
+            )
+
+    ## Strategies
+
+    def _deploy_direct(
+        self, w, mlflow_client, challenger_ver, challenger_served_name
+    ) -> dict:
+        from databricks.sdk.service.serving import (
+            Route,
+            TrafficConfig,
+        )
+
+        logger.info(
+            f"[{self.endpoint_name}] Direct: replacing with v{challenger_ver} at 100%"
+        )
+        w.serving_endpoints.update_config(
+            name=self.endpoint_name,
+            served_entities=[self._make_entity(challenger_served_name, challenger_ver)],
+            traffic_config=TrafficConfig(
+                routes=[
+                    Route(
+                        served_model_name=challenger_served_name, traffic_percentage=100
+                    )
+                ]
+            ),
+        )
+        self._promote(mlflow_client, challenger_ver)
+        return {
+            "model_name": self.model_name,
+            "model_registry_name": self.model_registry_name,
+            "endpoint_name": self.endpoint_name,
+            "strategy": "direct",
+            "challenger_version": challenger_ver,
+            "challenger_served_name": challenger_served_name,
+            "champion_version": None,
+            "champion_served_name": None,
+            "current_traffic": {challenger_served_name: 100},
+            "workload_size": self.workload_size,
+            "scale_to_zero": self.scale_to_zero,
+            "promoted": True,
+        }
+
+    def _deploy_blue_green(
+        self, w, mlflow_client, challenger_ver, challenger_served_name
+    ) -> dict:
+        from databricks.sdk.service.serving import Route, TrafficConfig
+
+        champion_ver = self._get_champion_version(mlflow_client)
+        if champion_ver is None:
+            # No champion yet - just deploy challenger at 100%
+            return self._deploy_direct(
+                w, mlflow_client, challenger_ver, challenger_served_name
+            )
+
+        champion_served_name = f"{self._model_short_name}-v{champion_ver}"
+        logger.info(
+            f"[{self.endpoint_name}] Blue-green: v{challenger_ver} at 0%, "
+            f"v{champion_ver} at 100% - run promote to switch"
+        )
+        w.serving_endpoints.update_config(
+            name=self.endpoint_name,
+            served_entities=[
+                self._make_entity(champion_served_name, champion_ver),
+                self._make_entity(challenger_served_name, challenger_ver),
+            ],
+            traffic_config=TrafficConfig(
+                routes=[
+                    Route(
+                        served_model_name=champion_served_name, traffic_percentage=100
+                    ),
+                    Route(
+                        served_model_name=challenger_served_name, traffic_percentage=0
+                    ),
+                ]
+            ),
+        )
+        return {
+            "model_name": self.model_name,
+            "model_registry_name": self.model_registry_name,
+            "endpoint_name": self.endpoint_name,
+            "strategy": "blue_green",
+            "challenger_version": challenger_ver,
+            "challenger_served_name": challenger_served_name,
+            "champion_version": champion_ver,
+            "champion_served_name": champion_served_name,
+            "current_traffic": {champion_served_name: 100, challenger_served_name: 0},
+            "workload_size": self.workload_size,
+            "scale_to_zero": self.scale_to_zero,
+            "promoted": False,
+        }
+
+    def _deploy_canary(
+        self, w, mlflow_client, challenger_ver, challenger_served_name
+    ) -> dict:
+        from databricks.sdk.service.serving import Route, TrafficConfig
+
+        champion_ver = self._get_champion_version(mlflow_client)
+        if champion_ver is None:
+            return self._deploy_direct(
+                w, mlflow_client, challenger_ver, challenger_served_name
+            )
+
+        champion_served_name = f"{self._model_short_name}-v{champion_ver}"
+        canary_pct = self.canary_initial_pct
+        champion_pct = 100 - canary_pct
+        logger.info(
+            f"[{self.endpoint_name}] Canary: v{challenger_ver} at {canary_pct}%, "
+            f"v{champion_ver} at {champion_pct}%"
+        )
+        w.serving_endpoints.update_config(
+            name=self.endpoint_name,
+            served_entities=[
+                self._make_entity(champion_served_name, champion_ver),
+                self._make_entity(challenger_served_name, challenger_ver),
+            ],
+            traffic_config=TrafficConfig(
+                routes=[
+                    Route(
+                        served_model_name=champion_served_name,
+                        traffic_percentage=champion_pct,
+                    ),
+                    Route(
+                        served_model_name=challenger_served_name,
+                        traffic_percentage=canary_pct,
+                    ),
+                ]
+            ),
+        )
+        return {
+            "model_name": self.model_name,
+            "model_registry_name": self.model_registry_name,
+            "endpoint_name": self.endpoint_name,
+            "strategy": "canary",
+            "challenger_version": challenger_ver,
+            "challenger_served_name": challenger_served_name,
+            "champion_version": champion_ver,
+            "champion_served_name": champion_served_name,
+            "current_traffic": {
+                champion_served_name: champion_pct,
+                challenger_served_name: canary_pct,
+            },
+            "workload_size": self.workload_size,
+            "scale_to_zero": self.scale_to_zero,
+            "promoted": False,
+        }
+
+    ## General helpers
+
+    def _make_entity(self, name: str, version: str):
+        from databricks.sdk.service.serving import ServedEntityInput
+
+        return ServedEntityInput(
+            entity_name=self.model_registry_name,
+            entity_version=str(version),
+            name=name,
+            workload_size=self.workload_size,
+            scale_to_zero_enabled=self.scale_to_zero,
+        )
+
+    def _get_champion_version(self, mlflow_client: MlflowClient) -> str | None:
+        try:
+            info = mlflow_client.get_model_version_by_alias(
+                self.model_registry_name, "champion"
+            )
+            return info.version
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _promote(self, mlflow_client: MlflowClient, version: str) -> None:
+        mlflow_client.set_registered_model_alias(
+            self.model_registry_name, "champion", version
+        )
+        try:
+            mlflow_client.delete_registered_model_alias(
+                self.model_registry_name, "challenger"
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Could not remove @challenger alias: %s", e)
+        logger.info(f"Promoted v{version} to @champion, removed @challenger")

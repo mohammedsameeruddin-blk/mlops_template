@@ -40,30 +40,22 @@ def load_data_from_file(spark, file_path):
     return df
 
 
-def load_model(model_registry_name: str):
+def load_model(model_registry_name: str, alias: str = "champion"):
     client = MlflowClient()
-    versions = client.search_model_versions(f"name='{model_registry_name}'")
-
-    if not versions:
-        raise ValueError(f"No versions found for model {model_registry_name}")
-
-    latest_version = max(int(v.version) for v in versions)
-    model_uri = f"models:/{model_registry_name}/{latest_version}"
-    logger.info(f"Loading model: {model_uri}")
-
-    return mlflow.sklearn.load_model(model_uri), latest_version
-
-
-def get_scaler_pipeline(model_registry_name, pipeline_file, local_path):
-    client = MlflowClient()
-
-    model_versions = client.search_model_versions(f"name='{model_registry_name}'")
-    latest_version = max(model_versions, key=lambda x: int(x.version))
-
-    model_version = client.get_model_version(
-        name=model_registry_name, version=f"{latest_version.version}"
+    version_info = client.get_model_version_by_alias(model_registry_name, alias)
+    model_uri = f"models:/{model_registry_name}@{alias}"
+    logger.info(
+        f"Loading the {alias} model: {model_uri} (version {version_info.version})"
     )
-    run_id = model_version.run_id
+    return mlflow.sklearn.load_model(model_uri), version_info.version
+
+
+def get_scaler_pipeline(
+    model_registry_name, pipeline_file, local_path, alias: str = "champion"
+):
+    client = MlflowClient()
+    version_info = client.get_model_version_by_alias(model_registry_name, alias)
+    run_id = version_info.run_id
 
     artifacts = client.list_artifacts(run_id=run_id, path="model/scaler")
     for a in artifacts:
@@ -145,7 +137,7 @@ def main(spark):
 
             logger.info(f"Starting action: {action_name}")
 
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(tz=timezone.utc)
             run_status = ""
             error_details = ""
 
@@ -304,7 +296,7 @@ def main(spark):
                     raise
 
                 finally:
-                    end_time = datetime.now(timezone.utc)
+                    end_time = datetime.now(tz=timezone.utc)
                     duration_minutes = round(
                         (end_time - start_time).total_seconds() / 60, 2
                     )

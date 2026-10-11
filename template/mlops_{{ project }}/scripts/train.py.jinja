@@ -12,6 +12,7 @@ import pandas as pd
 import skops.io as sio
 from loguru import logger
 from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
 from pyspark.sql import SparkSession
 
 try:
@@ -102,7 +103,7 @@ def main(spark):
 
             logger.info(f"Starting action: {action_name}")
 
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(tz=timezone.utc)
             run_status = ""
             error_details = ""
 
@@ -450,6 +451,14 @@ def main(spark):
                         logger.info(
                             f"Registered model: {model_reg_info.name} with version: {model_registered_version}"
                         )
+                        MlflowClient().set_registered_model_alias(
+                            name=func_kwargs["model_registry_name"],
+                            alias="challenger",
+                            version=model_registered_version,
+                        )
+                        logger.info(
+                            f"Set @challenger alias on {model_reg_info.name} v{model_registered_version}"
+                        )
 
                         # Log scaler artifact
                         scaler_path = artifacts_dir / "scaler.pkl"
@@ -563,7 +572,7 @@ def main(spark):
                     raise
 
                 finally:
-                    end_time = datetime.now(timezone.utc)
+                    end_time = datetime.now(tz=timezone.utc)
                     duration_minutes = round(
                         (end_time - start_time).total_seconds() / 60, 2
                     )
