@@ -1,4 +1,5 @@
 """Run ruff check or ruff format on .py.jinja files by handling Jinja syntax."""
+
 import re
 import subprocess
 import sys
@@ -14,9 +15,9 @@ def extract_jinja(content: str) -> tuple[str, list[str]]:
         originals.append(m.group(0))
         return f"__JINJA{idx:04d}__"
 
-    content = re.sub(r"\{\{.*?\}\}", replace, content)   # {{ expr }}
-    content = re.sub(r"\{%.*?%\}", replace, content)      # {% tag %}
-    content = re.sub(r"\{#.*?#\}", replace, content)      # {# comment #}
+    content = re.sub(r"\{\{.*?\}\}", replace, content)  # {{ expr }}
+    content = re.sub(r"\{%.*?%\}", replace, content)  # {% tag %}
+    content = re.sub(r"\{#.*?#\}", replace, content)  # {# comment #}
     return content, originals
 
 
@@ -34,7 +35,10 @@ def run_check(path: Path, ruff_cmd: list[str]) -> int:
     cleaned, _ = extract_jinja(path.read_text(encoding="utf-8"))
     result = subprocess.run(
         [*ruff_cmd, "check", "--stdin-filename", str(path), "-"],
-        input=cleaned, capture_output=True, text=True, encoding="utf-8",
+        input=cleaned,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     if result.stdout:
         print(result.stdout, end="")
@@ -48,7 +52,10 @@ def run_format(path: Path, ruff_cmd: list[str]) -> int:
     cleaned, originals = extract_jinja(original)
     result = subprocess.run(
         [*ruff_cmd, "format", "--stdin-filename", str(path), "-"],
-        input=cleaned, capture_output=True, text=True, encoding="utf-8",
+        input=cleaned,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     if result.returncode != 0:
         print(result.stderr, end="", file=sys.stderr)
@@ -88,7 +95,9 @@ if __name__ == "__main__":
     glob_args = [a for a in raw_args if a not in ("--format", "--uvx")]
 
     if not glob_args:
-        print("Usage: python ruff_jinja.py [--format] [--uvx] <file.py.jinja|glob> [...]")
+        print(
+            "Usage: python ruff_jinja.py [--format] [--uvx] <file.py.jinja|glob> [...]"
+        )
         sys.exit(1)
 
     ruff_cmd = ["uvx", "ruff"] if use_uvx else ["ruff"]

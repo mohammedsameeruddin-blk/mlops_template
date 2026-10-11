@@ -1,0 +1,34 @@
+# change as per the requirement
+
+version: '1.0'
+stage: serving
+file: serving.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: deploy_endpoint
+    enable: true
+    functions:
+      class_path: {{ project }}.common.serving.deployer:ServingDeployer
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_serving
+        model_name: {{ model }}
+        model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+        endpoint_name: {{ model }}_endpoint
+
+        deployment:
+          # Options: direct | blue_green | canary
+          strategy: canary
+          # Options: Small | Medium | Large
+          workload_size: Small
+          scale_to_zero: true
+          canary:
+            initial_traffic_pct: 10
+
+        ## Champion-Challenger (two different models)
+        # Uncomment to run a champion-challenger split. Requires a separately registered challenger model (different algorithm, not just a new version).
+        #
+        # champion_challenger:
+        #   enable: false
+        #   challenger_model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_challenger"
+        #   challenger_traffic_pct: 20

@@ -17,6 +17,8 @@ class ModelFileDegenerator:
         self.drift_monitoring_dir = (
             project_root / "pipeline_configs" / "drift_monitoring"
         )
+        self.serving_dir = project_root / "pipeline_configs" / "serving"
+        self.promotion_dir = project_root / "pipeline_configs" / "promotion"
 
         self.repo_root = project_root.parents[1]
         self.workflow_dir = self.repo_root / "workflow_jobs"
@@ -28,6 +30,8 @@ class ModelFileDegenerator:
         self.drift_monitoring_job = (
             self.workflow_dir / f"wf_{self.project_name}_drift_monitoring.yml"
         )
+        self.serving_job = self.workflow_dir / f"wf_{self.project_name}_serving.yml"
+        self.promotion_job = self.workflow_dir / f"wf_{self.project_name}_promotion.yml"
 
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
@@ -44,6 +48,8 @@ class ModelFileDegenerator:
             self.inference_dir,
             self.retraining_dir,
             self.drift_monitoring_dir,
+            self.serving_dir,
+            self.promotion_dir,
         ):
             model_dir = stage_dir / model_name
             if model_dir.exists():
@@ -94,6 +100,26 @@ class ModelFileDegenerator:
             )
             updated_workflow_files.append(self.drift_monitoring_job)
 
+        if self.serving_job.exists():
+            self._remove_from_job(
+                self.serving_job,
+                "serving",
+                f"{model_name}_serving",
+                "--models_served",
+                model_name,
+            )
+            updated_workflow_files.append(self.serving_job)
+
+        if self.promotion_job.exists():
+            self._remove_from_job(
+                self.promotion_job,
+                "promotion",
+                f"{model_name}_promotion",
+                "--models_promoted",
+                model_name,
+            )
+            updated_workflow_files.append(self.promotion_job)
+
         return removed_files, updated_workflow_files
 
     def _update_evaluate_yml(self, model_name: str) -> None:
@@ -131,8 +157,7 @@ class ModelFileDegenerator:
         for task in tasks:
             if "depends_on" in task:
                 task["depends_on"] = [
-                    d for d in task["depends_on"]
-                    if d.get("task_key") != task_key
+                    d for d in task["depends_on"] if d.get("task_key") != task_key
                 ]
 
         # remove model param from end_setup

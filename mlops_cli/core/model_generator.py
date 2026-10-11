@@ -15,6 +15,8 @@ class ModelFileGenerator:
         self.drift_monitoring_dir = (
             project_root / "pipeline_configs" / "drift_monitoring"
         )
+        self.serving_dir = project_root / "pipeline_configs" / "serving"
+        self.promotion_dir = project_root / "pipeline_configs" / "promotion"
 
         self.project_name = project_root.name
 
@@ -32,6 +34,12 @@ class ModelFileGenerator:
         self.drift_monitor_env = Environment(
             loader=FileSystemLoader(self.templates_dir / "drift_monitoring")
         )
+        self.serving_env = Environment(
+            loader=FileSystemLoader(self.templates_dir / "serving")
+        )
+        self.promotion_env = Environment(
+            loader=FileSystemLoader(self.templates_dir / "promotion")
+        )
 
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
@@ -43,6 +51,8 @@ class ModelFileGenerator:
         inference_model_dir = self.inference_dir / model
         retrain_model_dir = self.retraining_dir / model
         drift_monitoring_model_dir = self.drift_monitoring_dir / model
+        serving_model_dir = self.serving_dir / model
+        promotion_model_dir = self.promotion_dir / model
 
         if train_model_dir.exists():
             raise FileExistsError(f"Model '{model}' already exists")
@@ -58,10 +68,21 @@ class ModelFileGenerator:
             raise FileExistsError(f"Model '{model}' already exists")
         else:
             retrain_model_dir.mkdir(parents=True)
+
         if drift_monitoring_model_dir.exists():
             raise FileExistsError(f"Model '{model}' already exists")
         else:
             drift_monitoring_model_dir.mkdir(parents=True)
+
+        if serving_model_dir.exists():
+            raise FileExistsError(f"Model '{model}' already exists")
+        else:
+            serving_model_dir.mkdir(parents=True)
+
+        if promotion_model_dir.exists():
+            raise FileExistsError(f"Model '{model}' already exists")
+        else:
+            promotion_model_dir.mkdir(parents=True)
 
         context = {"project": self.project_name, "model": model}
 
@@ -110,6 +131,26 @@ class ModelFileGenerator:
                 self._render(
                     template_name, output_path, context, self.drift_monitor_env
                 )
+            )
+
+        ## Serving pipeline
+        for template_name in self.serving_env.list_templates():
+            if not template_name.endswith(".jinja"):
+                continue
+
+            output_path = serving_model_dir / template_name.replace(".jinja", "")
+            created_files.append(
+                self._render(template_name, output_path, context, self.serving_env)
+            )
+
+        ## Promotion pipeline
+        for template_name in self.promotion_env.list_templates():
+            if not template_name.endswith(".jinja"):
+                continue
+
+            output_path = promotion_model_dir / template_name.replace(".jinja", "")
+            created_files.append(
+                self._render(template_name, output_path, context, self.promotion_env)
             )
 
         self._ensure_data_yml()

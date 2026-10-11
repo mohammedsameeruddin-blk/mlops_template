@@ -1,0 +1,17 @@
+# change as per the requirement
+
+version: '1.0'
+stage: promotion
+file: promotion.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: promote_endpoint
+    enable: true
+    functions:
+      class_path: {{ project }}.common.serving.promoter:ServingPromoter
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_promotion
+        model_name: {{ model }}
+        # metadata_path is injected at runtime by promote_serving.py
+        # it reads from: {root_path}/serving/models/{{ model }}/serving_metadata.json

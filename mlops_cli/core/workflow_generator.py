@@ -20,6 +20,8 @@ class WorkflowFileGenerator:
         self.drift_monitoring_job = (
             self.workflow_dir / f"wf_{self.project_name}_drift_monitoring.yml"
         )
+        self.serving_job = self.workflow_dir / f"wf_{self.project_name}_serving.yml"
+        self.promotion_job = self.workflow_dir / f"wf_{self.project_name}_promotion.yml"
 
         # YAML handler
         self.yaml = YAML()
@@ -46,6 +48,14 @@ class WorkflowFileGenerator:
             self._update_drift_monitoring_job(model_name)
             updated.append(self.drift_monitoring_job)
 
+        if self.serving_job.exists():
+            self._update_serving_job(model_name)
+            updated.append(self.serving_job)
+
+        if self.promotion_job.exists():
+            self._update_promotion_job(model_name)
+            updated.append(self.promotion_job)
+
         return updated
 
     def _update_training_job(self, model_name: str):
@@ -60,7 +70,6 @@ class WorkflowFileGenerator:
         if any(t["task_key"] == new_task_key for t in tasks):
             return
 
-        split_task = next(t for t in tasks if t["task_key"] == "split_data")
         end_task = next(t for t in tasks if t["task_key"] == "end_setup")
 
         new_task = {
@@ -122,7 +131,6 @@ class WorkflowFileGenerator:
         if any(t["task_key"] == new_task_key for t in tasks):
             return
 
-        prepare_task = next(t for t in tasks if t["task_key"] == "prepare_input")
         end_task = next(t for t in tasks if t["task_key"] == "end_setup")
 
         new_task = {
@@ -292,6 +300,128 @@ class WorkflowFileGenerator:
         drift_evaluation_task["depends_on"].append({"task_key": new_task_key})
 
         with self.drift_monitoring_job.open("w") as f:
+            self.yaml.dump(data, f)
+
+    def _update_serving_job(self, model_name: str):
+        with self.serving_job.open() as f:
+            data = self.yaml.load(f)
+
+        tasks = data["resources"]["jobs"]["serving"]["tasks"]
+
+        new_task_key = f"{model_name}_serving"
+
+        if any(t["task_key"] == new_task_key for t in tasks):
+            return
+
+        end_task = next(t for t in tasks if t["task_key"] == "end_setup")
+
+        new_task = {
+            "task_key": new_task_key,
+            "depends_on": [{"task_key": "start_setup"}],
+            "environment_key": "default",
+            "spark_python_task": {
+                "python_file": "../scripts/deploy_serving.py",
+                "parameters": [
+                    "--root_path",
+                    "${workspace.root_path}",
+                    "--runtime_env",
+                    "${var.run_time_env}",
+                    "--yml_task",
+                    "serving.yml",
+                    "--project_name",
+                    f"{self.project_name}",
+                    "--model_name",
+                    f"{model_name}",
+                    "--stage_name",
+                    "serving",
+                    "--task_key",
+                    "{{task.name}}",
+                    "--task_run_id",
+                    "{{task.run_id}}",
+                    "--job_name",
+                    "{{job.name}}",
+                    "--job_id",
+                    "{{job.id}}",
+                    "--job_run_id",
+                    "{{job.run_id}}",
+                    "--experiment_id",
+                    "{{tasks.start_setup.values.experiment_id}}",
+                ],
+            },
+        }
+
+        # insert before end_setup
+        end_index = tasks.index(end_task)
+        tasks.insert(end_index, new_task)
+
+        # update end_setup dependency
+        end_task["depends_on"].append({"task_key": new_task_key})
+
+        # update model list parameter in end_setup
+        self._update_model_param(end_task, "--models_served", model_name)
+
+        with self.serving_job.open("w") as f:
+            self.yaml.dump(data, f)
+
+    def _update_promotion_job(self, model_name: str):
+        with self.promotion_job.open() as f:
+            data = self.yaml.load(f)
+
+        tasks = data["resources"]["jobs"]["promotion"]["tasks"]
+
+        new_task_key = f"{model_name}_promotion"
+
+        if any(t["task_key"] == new_task_key for t in tasks):
+            return
+
+        end_task = next(t for t in tasks if t["task_key"] == "end_setup")
+
+        new_task = {
+            "task_key": new_task_key,
+            "depends_on": [{"task_key": "start_setup"}],
+            "environment_key": "default",
+            "spark_python_task": {
+                "python_file": "../scripts/promote_serving.py",
+                "parameters": [
+                    "--root_path",
+                    "${workspace.root_path}",
+                    "--runtime_env",
+                    "${var.run_time_env}",
+                    "--yml_task",
+                    "promotion.yml",
+                    "--project_name",
+                    f"{self.project_name}",
+                    "--model_name",
+                    f"{model_name}",
+                    "--stage_name",
+                    "promotion",
+                    "--task_key",
+                    "{{task.name}}",
+                    "--task_run_id",
+                    "{{task.run_id}}",
+                    "--job_name",
+                    "{{job.name}}",
+                    "--job_id",
+                    "{{job.id}}",
+                    "--job_run_id",
+                    "{{job.run_id}}",
+                    "--experiment_id",
+                    "{{tasks.start_setup.values.experiment_id}}",
+                ],
+            },
+        }
+
+        # insert before end_setup
+        end_index = tasks.index(end_task)
+        tasks.insert(end_index, new_task)
+
+        # update end_setup dependency
+        end_task["depends_on"].append({"task_key": new_task_key})
+
+        # update model list parameter in end_setup
+        self._update_model_param(end_task, "--models_promoted", model_name)
+
+        with self.promotion_job.open("w") as f:
             self.yaml.dump(data, f)
 
     def _update_model_param(self, end_task, param_name: str, model_name: str):
