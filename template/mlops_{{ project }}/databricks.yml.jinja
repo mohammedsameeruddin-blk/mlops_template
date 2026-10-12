@@ -1,38 +1,69 @@
 bundle:
   name: {{ project }}
 
+# ---------------------------------------------------------------------------
+# Artifacts
+# ---------------------------------------------------------------------------
+# The project wheel is built with `uv build` before each `databricks bundle deploy`.
+# The resulting .whl is uploaded to the workspace alongside the DS project wheel.
 artifacts:
   {{ project }}:
     type: whl
     build: uv build
     path: .
 
+# ---------------------------------------------------------------------------
+# Variables
+# ---------------------------------------------------------------------------
+# Variables defined here can be overridden per target (see targets section below)
+# or at deploy time: databricks bundle deploy -t dev --var="max_workers=4"
 variables:
   mlops_project_library:
+    # Path to the built MLOps wheel. Matches pyproject.toml version — update both together.
     default: ./dist/{{ project }}-1.0.0-py3-none-any.whl
 
   data_science_project_library:
+    # Path to the DS project wheel. Drop the .whl into ds_backend/ before deploying.
     default: ./ds_backend/*.whl
-  
+
   run_time_env:
+    # Passed to every script as --runtime_env. Controls which [section] is read from config.toml.
+    # Do not change this default; each target overrides it below.
     default: dev
     description: run_time_env argument to workflow
 
   project_file_root_path:
+    # Path inside the bundle workspace where pipeline config YAMLs are resolved.
+    # Do not change unless you restructure the src/ layout.
     default: ${workspace.file_path}/src
 
   spark_version:
+    # TODO: Update if you need a different Databricks Runtime (DBR) version.
+    # Use an LTS version for stability. Check available versions at:
+    # https://docs.databricks.com/en/release-notes/runtime/index.html
     default: 15.4.x-scala2.12
 
   node_type_id:
+    # TODO: Choose a worker instance type that matches your compute needs.
+    # Azure general-purpose examples: Standard_D8a_v4 (8 vCPU), Standard_D16a_v4 (16 vCPU)
+    # Azure GPU examples: Standard_NC4as_T4_v3 (T4 GPU, for deep learning)
     default: Standard_D8a_v4
 
   min_workers:
+    # TODO: Minimum number of worker nodes for autoscaling.
+    # Set equal to max_workers to disable autoscaling and use a fixed cluster size.
     default: 1
 
   max_workers:
+    # TODO: Maximum number of worker nodes for autoscaling.
+    # Increase for large datasets or parallel feature computation.
     default: 2
 
+# ---------------------------------------------------------------------------
+# Includes
+# ---------------------------------------------------------------------------
+# All workflow job YAML files are included from the workflow_jobs/ directory.
+# Each wf_*.yml file defines one Databricks workflow job.
 include:
   - workflow_jobs/wf*.yml
 
@@ -42,6 +73,16 @@ sync:
     - build/**
     - "**/*.egg-info/**"
 
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
+# Three deployment targets: dev (default), qa, prod.
+# Each target sets the Databricks workspace host and overrides run_time_env.
+#
+# root_path controls where the bundle is stored in the workspace.
+# The default path uses the author's user folder — suitable for dev.
+# TODO: For qa/prod, change root_path to a shared team path, e.g.:
+#   root_path: /Workspace/Shared/bundles/${bundle.name}/${bundle.target}
 targets:
   dev:
     mode: development

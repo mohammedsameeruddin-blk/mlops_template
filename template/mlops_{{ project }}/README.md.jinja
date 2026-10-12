@@ -1,7 +1,208 @@
-Congratulations, {{ author_email }}!
+# {{ project }} — MLOps Project
 
-You have successfully created/setup the project `{{ project }}` on your system. 
+Generated for **{{ author_email }}** using the Blackstraw MLOps Template.
 
-Next, let's take a look at the files and folders inside the project.
+This project contains a fully wired Databricks Asset Bundle (DAB) with six workflow pipelines, MLflow tracking, Databricks Feature Store integration, a unified Delta-table audit trail, and Google Chat notifications.
 
 ---
+
+## Quick-Start Checklist
+
+After scaffolding, complete these steps before your first deployment:
+
+- [ ] Fill in `src/{{ project }}/config.toml` — catalog names, Volumes path, webhook URL
+- [ ] Replace every `<data_science_module_file_path>` placeholder in the pipeline config YAMLs with the actual Python class paths from the `{{ ds_project }}` package
+- [ ] Replace `<catalog.schema.table>` in `pipeline_configs/*/data.yml` with your raw-data table name
+- [ ] Place the `{{ ds_project }}` wheel in `ds_backend/`
+- [ ] Review cluster variables in `databricks.yml` (`spark_version`, `node_type_id`, `min/max_workers`)
+- [ ] Set `WEBHOOK_URL` in `config.toml` (Google Chat incoming webhook for notifications)
+
+---
+
+## Project Structure
+
+```
+mlops_{{ project }}/
+├── databricks.yml              # DAB bundle root — variables, targets, included workflow files
+├── pyproject.toml              # Python package; lists {{ ds_project }} as a dependency
+├── ds_backend/                 # Place {{ ds_project }}.whl here before deploying
+├── scripts/                    # Databricks Spark Python task entry points (one per pipeline step)
+├── src/{{ project }}/
+│   ├── config.toml             # Per-environment runtime config  ← FILL THIS IN FIRST
+│   ├── custom_actions/         # Add your own action classes here
+│   ├── common/                 # Shared utilities (data, drift, serving, audit, notify, features)
+│   └── pipeline_configs/       # YAML action configs rendered per task at runtime
+│       ├── common/             # start.yml, end.yml (shared by every workflow)
+│       ├── training/           # data → preprocess → featurization → splitter → train
+│       ├── inference/          # data → preprocess → featurization → prepare_input → inference
+│       ├── retraining/         # same structure as training/
+│       ├── serving/            # deploy strategy config
+│       ├── promotion/          # promote challenger to champion
+│       └── drift_monitoring/   # per-model drift detection + evaluation
+└── workflow_jobs/
+    ├── wf_{{ project }}_training.yml
+    ├── wf_{{ project }}_inference.yml
+    ├── wf_{{ project }}_retraining.yml
+    ├── wf_{{ project }}_serving.yml
+    ├── wf_{{ project }}_promotion.yml
+    └── wf_{{ project }}_drift_monitoring.yml
+```
+
+---
+
+## The Six Pipelines
+
+### Training — `wf_{{ project }}_training`
+
+```
+start_setup → extract_data → preprocess_data → featurize_data → split_data → {{ model }}_training → end_setup
+```
+
+1. Creates the MLflow experiment and audit table.
+2. Reads raw data from the configured Databricks table into `MODEL_CATALOG_SCHEMA`.
+3. Calls the DS preprocessor class and saves the result as a CSV file.
+4. Calls the DS feature pipeline (fit), writes the feature CSV and saves the pipeline artifact, and writes to the Feature Store.
+5. Splits data into train/test.
+6. Runs hyperparameter tuning → model evaluation → model training. The trained model is registered in the MLflow registry with the `@challenger` alias.
+7. Sends a Google Chat success notification and cleans up the temporary output folder.
+
+### Inference — `wf_{{ project }}_inference`
+
+```
+start_setup → extract_data → preprocess_data → featurize_data → prepare_input → {{ model }}_inference → end_setup
+```
+
+Featurization here uses **transform-only** (no fit) — it downloads the feature pipeline artifact saved during training. Predictions are written to `MODEL_CATALOG_SCHEMA.{{ model }}_predictions` using the `@champion` model from the registry.
+
+### Retraining — `wf_{{ project }}_retraining`
+
+Identical structure to training. When `stage_name == retraining`, the training script reads the best hyperparameters from the previous training run's `best_model_params.json` artifact, skipping the tuning step. Triggered automatically by drift evaluation when `auto_trigger.enable: true`.
+
+### Serving — `wf_{{ project }}_serving`
+
+Deploys or updates the Databricks Model Serving endpoint for the `@challenger` model. Three strategies:
+
+| Strategy | Behaviour |
+|---|---|
+| `direct` | Replaces the endpoint immediately; promotes `@challenger` → `@champion` right away |
+| `blue_green` | Adds challenger at 0% traffic; champion stays at 100%. Promotion is a separate step. |
+| `canary` | Routes `initial_traffic_pct`% (default 10%) to challenger. Promotion is a separate step. |
+
+Configure the strategy in `src/{{ project }}/pipeline_configs/serving/{{ model }}/serving.yml`.
+
+### Promotion — `wf_{{ project }}_promotion`
+
+Reads the serving metadata written by the serving workflow and shifts 100% traffic to the challenger version. Sets the `@champion` alias and removes `@challenger`. Run this after validating the canary or blue-green split.
+
+### Drift Monitoring — `wf_{{ project }}_drift_monitoring`
+
+```
+start_setup → {{ model }}_drift_detection → evaluate_drift_results → end_setup
+```
+
+Three built-in detectors (all configurable in `drift.yml`):
+
+| Detector | Method | What it checks |
+|---|---|---|
+| `data_drift` | TabularDrift (KS / chi-sq via alibi-detect) | Feature distribution shift |
+| `prediction_drift` | KSDrift | Prediction score distribution shift |
+| `data_quality` | Custom null-rate + range checks | Data quality degradation |
+
+Results land in `MODEL_CATALOG_SCHEMA.{{ project }}_drift_results`. Configure `auto_trigger.enable: true` in `evaluate.yml` to automatically kick off the retraining pipeline on drift.
+
+To run on a schedule, uncomment the `trigger` block in `workflow_jobs/wf_{{ project }}_drift_monitoring.yml`.
+
+---
+
+## Configuration Reference (`config.toml`)
+
+```toml
+[dev]
+WORKSPACE_URL         # Databricks workspace URL — auto-filled by Copier
+VOLUMES_ROOT_PATH     # /Volumes/<catalog>/<schema>/<volume> — output folder root
+AUDIT_TARGET_CATALOG  # Unity Catalog catalog for the audit table
+AUDIT_TARGET_SCHEMA   # Schema inside AUDIT_TARGET_CATALOG (default: "default")
+AUDIT_TARGET_TABLE    # Audit table name (default: mlops_{{ project }}_audit_tbl)
+MODEL_CATALOG         # Unity Catalog catalog for models, features, and predictions
+MODEL_SCHEMA          # Schema inside MODEL_CATALOG
+MODEL_CATALOG_SCHEMA  # Convenience shorthand: "<MODEL_CATALOG>.<MODEL_SCHEMA>"
+WEBHOOK_URL           # Google Chat incoming webhook URL
+```
+
+All three environments (`dev`, `qa`, `prod`) must define the same keys.
+
+---
+
+## What the DS Team Needs to Implement
+
+The scaffold calls into the `{{ ds_project }}` package via `class_path` entries in the pipeline config YAMLs. Each class receives `kwargs` from the YAML and must expose a `run()` method.
+
+| Class | Called from | Signature hint |
+|---|---|---|
+| Preprocessor | `preprocess.yml` | `run(df) → DataFrame or CSV` |
+| Feature pipeline | `featurization.yml` | `fit(df) → pipeline artifact + features DataFrame` |
+| Inference feature pipeline | `inference/featurization.yml` | `transform(df) → features DataFrame` |
+| `HyperparameterTuner` | `train.yml` | `run() → best params dict` |
+| `ModelEvaluator` | `train.yml` | `run() → metrics dict` |
+| `ModelTrainer` | `train.yml` | `run() → trained sklearn model + optional scaler` |
+| `BatchScoring` | `inference.yml` | `run() → predictions DataFrame` |
+
+Replace every `<data_science_module_file_path>` placeholder in the config YAMLs with the actual dotted import path, e.g.:
+
+```yaml
+class_path: {{ ds_project }}.preprocessing.pipeline:DataPreprocessor
+```
+
+---
+
+## Adding Custom Actions
+
+If you need steps that do not fit the DS-project class pattern (e.g., a post-processing step, a custom notification, or a data quality gate), add your class to `src/{{ project }}/custom_actions/__init__.py` and reference it via `class_path` in any pipeline config YAML:
+
+```yaml
+- name: my_custom_step
+  enable: true
+  functions:
+    class_path: {{ project }}.custom_actions:MyCustomAction
+    kwargs:
+      project_name: {{ project }}
+      # ... your kwargs
+```
+
+See `src/{{ project }}/custom_actions/__init__.py` for the base class interface.
+
+---
+
+## Deployment
+
+```bash
+# Authenticate
+databricks auth login --host <workspace_url>
+
+# Build and deploy to dev (default target)
+databricks bundle deploy -t dev
+
+# Run a workflow
+databricks bundle run wf_{{ project }}_training -t dev
+databricks bundle run wf_{{ project }}_inference -t dev
+
+# Deploy to QA / prod
+databricks bundle deploy -t qa
+databricks bundle deploy -t prod
+```
+
+---
+
+## Databricks Bundle Variables
+
+All variables are defined in `databricks.yml` and can be overridden per target or at runtime:
+
+| Variable | Default | Description |
+|---|---|---|
+| `mlops_project_library` | `./dist/{{ project }}-1.0.0-py3-none-any.whl` | Built MLOps package path |
+| `data_science_project_library` | `./ds_backend/*.whl` | DS project wheel path |
+| `run_time_env` | `dev` | Runtime environment passed to `config.toml` key lookup |
+| `spark_version` | `15.4.x-scala2.12` | Databricks Runtime version |
+| `node_type_id` | `Standard_D8a_v4` | Worker instance type |
+| `min_workers` | `1` | Autoscale minimum workers |
+| `max_workers` | `2` | Autoscale maximum workers |

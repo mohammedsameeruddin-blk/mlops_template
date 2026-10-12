@@ -1,4 +1,23 @@
-# change as per the requirement
+# =============================================================================
+# FEATURIZATION CONFIG — training pipeline
+# =============================================================================
+# This step calls the DS project's feature pipeline class in FIT mode.
+# It writes:
+#   - A feature CSV file (for the train/test split step)
+#   - The fitted pipeline artifact as a .pkl (for inference reuse)
+#   - A Databricks Feature Store table (versioned feature snapshot)
+#
+# TODO: Replace <data_science_module_file_path> with the dotted Python path
+#       for the DS featurization class. Format:
+#           <package>.<module>.<submodule>:<ClassName>
+#       Example:
+#           {{ ds_project }}.featurization.pipeline:FeaturePipeline
+#
+# The class must expose a fit(df) method that returns (features_df, pipeline).
+#
+# TODO: Replace "{{ dataset_keyword }}_id" with the actual primary key column
+#       used to join features in the Feature Store.
+# =============================================================================
 
 version: '1.0'
 stage: training
@@ -8,6 +27,8 @@ actions:
   - name: {{ dataset_keyword }}_featurization
     enable: true
     functions:
+      # TODO: Replace with the DS project's featurization class path (fit mode).
+      # Format: <ds_project>.<module>.<submodule>:<ClassName>
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -17,14 +38,19 @@ actions:
         inputs:
           # currently supports file/databricks_table
           file:
+            # Reads the cleaned CSV produced by preprocess.yml.
             data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
+            # Feature CSV consumed by the train/test split step.
             data: /data/featurization/{{ dataset_keyword }}.csv
+            # Fitted pipeline artifact saved to Volumes and logged to MLflow.
             pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
           databricks_table:
+            # Unity Catalog Feature Store table name.
             feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
-            primary_key: "{{ dataset_keyword }}_id" # change as per the requirement
+            # TODO: Replace with the actual primary key column name in your feature table.
+            primary_key: "{{ dataset_keyword }}_id"

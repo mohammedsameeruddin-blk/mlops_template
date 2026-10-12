@@ -1,4 +1,19 @@
-# change as per the requirement
+# =============================================================================
+# PREPROCESSING CONFIG — training pipeline
+# =============================================================================
+# This step calls the DS project's preprocessing class and writes the cleaned
+# data as a CSV file for the featurization step.
+#
+# TODO: Replace <data_science_module_file_path> with the actual dotted Python
+#       import path for the DS preprocessing class. Format:
+#           <package>.<module>.<submodule>:<ClassName>
+#       Example:
+#           {{ ds_project }}.preprocessing.pipeline:DataPreprocessor
+#
+# The class receives the kwargs below and must expose a run() method.
+# Inputs come from the staging table written by data.yml (databricks_table).
+# Output is a CSV written to VOLUMES_ROOT_PATH/data/preprocessing/.
+# =============================================================================
 
 version: '1.0'
 stage: training
@@ -8,6 +23,8 @@ actions:
   - name: {{ dataset_keyword }}_preprocessing
     enable: true
     functions:
+      # TODO: Replace with the DS project's preprocessing class path.
+      # Format: <ds_project>.<module>.<submodule>:<ClassName>
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -19,10 +36,12 @@ actions:
           file:
             data:
             pipeline:
+          # Reads from the raw staging table written by data.yml.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
         outputs:
           # currently supports file/databricks_table
           file:
+            # Cleaned data CSV — consumed by featurization.yml as its input.
             data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:

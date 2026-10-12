@@ -1,4 +1,29 @@
-# change as per the requirement
+# =============================================================================
+# TRAINING CONFIG — {{ model }} model
+# =============================================================================
+# This config drives the four-action training sequence:
+#   1. hyperparameter_tuning  → finds the best hyperparameters
+#   2. model_evaluation       → cross-validates the model with best params
+#   3. model_training         → trains the final model and registers it
+#   4. log_experiment_details → writes a tracking record to Delta
+#
+# Class paths below point into the {{ ds_project }} package. Each class
+# must be importable from the installed wheel in ds_backend/.
+#
+# The DS team needs to implement:
+#   - HyperparameterTuner  (run() → best params dict, logged to MLflow)
+#   - ModelEvaluator       (run() → per-fold metrics dict, logged to MLflow)
+#   - ModelTrainer         (run() → sklearn model, optionally with a scaler)
+#
+# Data inputs reference CSV files written by earlier pipeline steps.
+# All three classes receive the same input paths — only the train step
+# needs them all; tuning and evaluation may ignore the pipeline field.
+#
+# TODO: Review each class_path and confirm the module structure matches
+#       what the {{ ds_project }} team has implemented.
+# TODO: Set include_model_explainability to false if the DS model does not
+#       support SHAP-based explanations (e.g., some neural network architectures).
+# =============================================================================
 
 version: '1.0'
 stage: training
@@ -8,31 +33,36 @@ actions:
   - name: hyperparameter_tuning
     enable: true
     functions:
+      # DS team implements: run() → logs trials to MLflow, returns best params.
       class_path: {{ ds_project }}.models.{{ model }}.training.hypertuning.tuner:HyperparameterTuner
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_hypertuning
+        # currently supports file/databricks_table
         source_data_type: file
         inputs:
-          # currently supports file/databricks_table
           file:
             train:
               data: /data/training/train.csv
             test:
               data: /data/training/test.csv
+            # Leave pipeline empty if the featurization pipeline is not needed at tuning time.
             pipeline:
           databricks_table:
-  
+
   - name: model_evaluation
     enable: true
     functions:
+      # DS team implements: run() → logs cross-validation metrics to MLflow.
+      # Metrics logged: accuracy, precision, recall, roc_auc (classification)
+      #                 or MAE, R², MSE, MAPE (regression).
       class_path: {{ ds_project }}.models.{{ model }}.training.evaluation.selector:ModelEvaluator
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_evaluation
+        # currently supports file/databricks_table
         source_data_type: file
         inputs:
-          # currently supports file/databricks_table
           file:
             train:
               data: /data/training/train.csv
@@ -40,28 +70,36 @@ actions:
               data: /data/training/test.csv
             pipeline:
           databricks_table:
-  
+
   - name: model_training
     enable: true
     functions:
+      # DS team implements: run() → returns a trained sklearn-compatible model.
+      # The scaffold registers the model in Unity Catalog with the @challenger alias
+      # and optionally generates 4 SHAP explainability plots.
       class_path: {{ ds_project }}.models.{{ model }}.training.train:ModelTrainer
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_training
+        # currently supports file/databricks_table
         source_data_type: file
+        # Model registry path: <MODEL_CATALOG>.<MODEL_SCHEMA>.<model_name>
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
-        include_model_explainability: true # true/false - whether to include model explainability in the training process. If true, the training function should return the explainability artifacts which will be stored in the model registry along with the model.
+        # TODO: Set to false if the DS model does not support SHAP explainability.
+        include_model_explainability: true
         inputs:
-          # currently supports file/databricks_table
           file:
             train:
               data: /data/training/train.csv
             test:
               data: /data/training/test.csv
+            # Path to the featurization pipeline .pkl — used to log it as an artifact.
             pipeline:
           databricks_table:
-  
+
   - name: log_experiment_details
+    # Writes an experiment tracking record to a Delta table for lineage queries.
+    # No changes needed here unless you change the experiment_tracking table name.
     enable: true
     functions:
       class_path: {{ project }}.common.utils.io_utils:log_experiment_details

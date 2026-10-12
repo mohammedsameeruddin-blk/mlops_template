@@ -1,0 +1,89 @@
+# =============================================================================
+# CUSTOM ACTIONS
+# =============================================================================
+# Add project-specific action classes here when the built-in scaffold steps
+# (data extraction, preprocessing, featurization, training, inference) are not
+# enough. Custom actions plug into any pipeline step via the class_path field
+# in the corresponding pipeline config YAML.
+#
+# HOW TO ADD A CUSTOM ACTION
+# --------------------------
+# 1. Create a class below that inherits from BaseAction (or is standalone).
+# 2. Implement the run(**kwargs) method with your logic.
+# 3. Reference the class in any pipeline config YAML under class_path:
+#
+#      class_path: {{ project }}.custom_actions:MyCustomAction
+#      kwargs:
+#        project_name: {{ project }}
+#        my_param: some_value
+#
+# 4. The kwargs in the YAML are unpacked and passed to run() by the script.
+#
+# WHAT GOES HERE (examples)
+# --------------------------
+#   - Post-prediction transformations (e.g., applying business rules to scores)
+#   - Custom data quality gates (fail the pipeline if a threshold is not met)
+#   - Writing results to an external system (e.g., Cosmos DB, REST API)
+#   - Custom notification steps
+#   - Feature engineering that does not fit the featurization pipeline pattern
+#
+# WHAT DOES NOT GO HERE
+# ----------------------
+#   - Model training, evaluation, or hyperparameter tuning → belongs in {{ ds_project }}
+#   - Preprocessing → belongs in {{ ds_project }}
+#   - Generic data loading → use data_loader.py in common/data/
+
+from __future__ import annotations
+
+from loguru import logger
+
+
+class BaseAction:
+    """Minimal interface expected by the MLOps pipeline scripts.
+
+    Every action class called via class_path must either inherit from this
+    base class or implement a compatible run() method.
+    """
+
+    def __init__(self, project_name: str, process_name: str, **kwargs):
+        self.project_name = project_name
+        self.process_name = process_name
+        self.kwargs = kwargs
+
+    def run(self, **kwargs):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement run(**kwargs)"
+        )
+
+
+# =============================================================================
+# ADD YOUR CUSTOM ACTION CLASSES BELOW OR CREATE A NEW SCRIPTS FILE IF NEEDED.
+# =============================================================================
+
+# Example: a post-processing step that applies a business rule to predictions.
+#
+# class ApplyBusinessRules(BaseAction):
+#     """Apply a hard-coded confidence threshold to model predictions.
+#
+#     YAML config example:
+#         class_path: {{ project }}.custom_actions:ApplyBusinessRules
+#         kwargs:
+#           project_name: {{ project }}
+#           process_name: {{ model }}_postprocess
+#           confidence_threshold: 0.75
+#           predictions_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions"
+#     """
+#
+#     def run(self, confidence_threshold: float = 0.5, predictions_table: str = "", **kwargs):
+#         from pyspark.sql import SparkSession
+#         spark = SparkSession.builder.getOrCreate()
+#
+#         df = spark.table(predictions_table)
+#         filtered = df.filter(df["prediction_score"] >= confidence_threshold)
+#         filtered.write.mode("overwrite").saveAsTable(predictions_table)
+#
+#         logger.info(
+#             "Applied confidence threshold %.2f — kept %d / %d rows",
+#             confidence_threshold, filtered.count(), df.count(),
+#         )
+#         return filtered

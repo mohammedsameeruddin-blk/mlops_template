@@ -1,4 +1,28 @@
-﻿# change as per the requirement
+# =============================================================================
+# DRIFT DETECTION CONFIG — {{ model }} model
+# =============================================================================
+# This config runs three drift detectors against the {{ model }} model's data.
+# Results are written to MODEL_CATALOG_SCHEMA.{{ project }}_drift_results.
+#
+# TODO (required):
+#   1. Set reference.feature_table to the Feature Store table that holds the
+#      TRAINING data snapshot (the baseline distribution).
+#      Example: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
+#
+#   2. Set current.feature_table to the Feature Store table that holds the
+#      INCOMING inference data (the distribution to compare against).
+#      Example: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
+#
+#   3. Set reference.predictions_table if you have training-time scores stored
+#      separately; otherwise leave null (prediction drift uses the inference table).
+#
+# TODO (optional):
+#   - Adjust p_val thresholds (default 0.05 for KS/chi-sq tests).
+#   - Change correction to "fdr" if you have many features and want less
+#     conservative multiple-testing correction than "bonferroni".
+#   - Change score_column if your model's prediction column is not "prediction_score".
+#   - Adjust severity_minor / severity_major thresholds to tune alert sensitivity.
+# =============================================================================
 
 version: '1.0'
 stage: drift_monitoring
@@ -18,39 +42,45 @@ actions:
         detectors:
           data_drift:
             enable: true
-            # KS for numerical, chi-square for categorical (alibi-detect)
+            # KS test for numerical features, chi-square for categorical (via alibi-detect TabularDrift).
             method: tabular_drift
             p_val: 0.05
-            # multiple-testing correction: bonferroni | fdr
+            # Multiple-testing correction: bonferroni (conservative) | fdr (less strict with many features)
             correction: bonferroni
             feature_columns:
-              # "any" means all columns; or list specific feature names
+              # "any" detects drift on all columns. Replace with a list of column names to restrict.
               - any
 
           prediction_drift:
             enable: true
             method: ks_test
             p_val: 0.05
+            # TODO: Change to the actual prediction score column name in your predictions table.
             score_column: prediction_score
 
           data_quality:
             enable: true
-            # flag if null rate increases by >5 percentage points
+            # Flag if null rate for any column increases by more than 5 percentage points.
             null_threshold: 0.05
 
         reference:
-          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<train_features>" # change as per the need
-          # set if training-time scores are stored separately
+          # TODO: Set to the Feature Store table used as the TRAINING data baseline.
+          # This is typically MODEL_CATALOG_SCHEMA.<dataset_keyword>_features.
+          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<train_features>"
+          # Set if training-time prediction scores are stored separately; otherwise null.
           predictions_table: null
 
         current:
-          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<test_incoming_features>" # change as per the need
-          predictions_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions" # change as per the need
+          # TODO: Set to the Feature Store table for INCOMING inference data.
+          # This is typically MODEL_CATALOG_SCHEMA.<dataset_keyword>_incoming_features.
+          feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.<test_incoming_features>"
+          # Predictions table written by the inference pipeline — usually no change needed.
+          predictions_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"
 
         thresholds:
-          # informational: % of features that need to drift for "major" model flag
+          # Informational: percentage of drifted features that flags the model as needing attention.
           drift_percentage: 30
-          # drift score >= this â†’ "minor"
+          # Drift score >= severity_minor → "minor" alert severity.
           severity_minor: 0.10
-          # drift score >= this â†’ "major"
+          # Drift score >= severity_major → "major" alert severity (may trigger retraining).
           severity_major: 0.25
