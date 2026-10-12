@@ -2,6 +2,11 @@ actions:
   - name: {{ dataset_keyword }}_preprocessing
     enable: true
     functions:
+      # TODO: Replace <data_science_module_file_path> with the same preprocessing class
+      # used in training/preprocess.yml. The class must handle inference data without
+      # re-fitting (stateless transforms, or load a previously saved artifact).
+      # Format: <package>.<module>:<ClassName>
+      # Example: my_ds_project.preprocessing.pipeline:DataPreprocessor
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -13,10 +18,12 @@ actions:
           file:
             data:
             pipeline:
+          # Reads from the incoming staging table written by inference/data.yml.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"
         outputs:
           # currently supports file/databricks_table
           file:
+            # Cleaned CSV consumed by inference/featurization.yml.
             data: /data/preprocessing/{{ dataset_keyword }}_incoming.csv
             pipeline:
           databricks_table:

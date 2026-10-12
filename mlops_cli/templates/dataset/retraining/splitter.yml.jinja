@@ -1,4 +1,9 @@
+# This snippet is merged into retraining/splitter.yml by the CLI.
+# It adds the {{ dataset_keyword }} Feature Store table as a feature source
+# for the retraining train/test split step.
 databricks_table:
+  # Feature table re-fitted during this retraining run.
+  # Pinned to the Delta version recorded during retraining featurization.
   {{ dataset_keyword }}:
       feature_run_name: {{ dataset_keyword }}_featurization
       feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"

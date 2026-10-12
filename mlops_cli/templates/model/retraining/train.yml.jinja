@@ -1,4 +1,21 @@
-# change as per the requirement
+# =============================================================================
+# RETRAINING CONFIG — {{ model }} model
+# =============================================================================
+# IMPORTANT: This config intentionally skips hyperparameter_tuning and
+# model_evaluation. During retraining the scaffold automatically reads
+# best_model_params.json from the ORIGINAL training run's MLflow artifacts
+# and passes those params directly to ModelTrainer — no re-tuning needed.
+#
+# When is retraining triggered?
+#   Automatically by drift_monitoring/evaluate.yml when auto_trigger.enable
+#   is true and the number of drifted models >= min_drifted_models.
+#   Can also be triggered manually by running the retraining workflow.
+#
+# TODO: Replace every <ds_project> placeholder with the actual DS package name.
+#       Example: replace <ds_project> with fraud_ds
+#
+# TODO: Set include_model_explainability to match what is set in training/train.yml.
+# =============================================================================
 
 version: '1.0'
 stage: retraining
@@ -6,15 +23,21 @@ file: train.yml # same as current filename; do not change this
 audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
 actions:
   - name: model_training
+    # Reuses the best hyperparameters from the last training run (loaded from
+    # best_model_params.json in the training MLflow artifacts). Trained on fresh
+    # data and registered with the @challenger alias — same as initial training.
     enable: true
     functions:
+      # TODO: Replace <ds_project> with the actual DS package name.
       class_path: <ds_project>.models.{{ model }}.training.train:ModelTrainer
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_training
         source_data_type: file
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
-        include_model_explainability: true # true/false - whether to include model explainability in the training process. If true, the training function should return the explainability artifacts which will be stored in the model registry along with the model.
+        # TODO: Set to false if the DS model does not support SHAP explainability.
+        # Must match the value set in training/train.yml.
+        include_model_explainability: true
         inputs:
           # currently supports file/databricks_table
           file:
@@ -26,6 +49,8 @@ actions:
           databricks_table:
 
   - name: log_experiment_details
+    # Writes a retraining experiment record to the tracking Delta table.
+    # No changes needed here.
     enable: true
     functions:
       class_path: {{ project }}.common.utils.io_utils:log_experiment_details

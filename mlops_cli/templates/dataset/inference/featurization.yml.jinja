@@ -2,24 +2,36 @@ actions:
   - name: {{ dataset_keyword }}_featurization
     enable: true
     functions:
+      # TODO: Replace with the same featurization class used in training/featurization.yml.
+      # The script calls .transform() here — NOT .fit() — so no fitting occurs.
+      # The training-time pipeline artifact is downloaded automatically from MLflow.
+      # Format: <package>.<module>:<ClassName>
+      # Example: my_ds_project.featurization.pipeline:FeaturePipeline
       class_path:
       kwargs:
         project_name: {{ project }}
         process_name: {{ dataset_keyword }}_features
         source_data_type: file
         target_data_type: file
+        # Used to locate the training experiment and download the pipeline artifact.
         experiment_details: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.experiment_tracking"
         inputs:
           # currently supports file/databricks_table
           file:
+            # Incoming preprocessed data from inference/preprocess.yml.
             data: /data/preprocessing/{{ dataset_keyword }}_incoming.csv
-            pipeline: {{ dataset_keyword }}_features.pkl # refers to the pkl file that was saved during training
+            # Filename of the training-time pipeline artifact to load.
+            # Must match the filename used when saving the artifact during training.
+            pipeline: {{ dataset_keyword }}_features.pkl
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
+            # Transformed feature CSV fed into inference/prepare_input.yml.
             data: /data/featurization/{{ dataset_keyword }}_incoming.csv
             pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
           databricks_table:
+            # Inference-time Feature Store table (separate from training features table).
             feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
-            primary_key: "{{ dataset_keyword }}_id" # change as per the requirement
+            # TODO: Replace with the actual primary key column. Must match training/featurization.yml.
+            primary_key: "{{ dataset_keyword }}_id"

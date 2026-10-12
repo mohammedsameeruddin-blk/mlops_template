@@ -13,10 +13,14 @@ actions:
           file:
             data:
             pipeline:
+          # TODO: Replace <catalog.schema.table> with the fully qualified name of your
+          # incoming inference data source table (not the training table).
+          # Example: main.raw_data.transaction_events_incoming
           databricks_table: <catalog.schema.table>
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Staged as _incoming_raw_data to distinguish from the training staging table.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"

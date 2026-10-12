@@ -1,4 +1,19 @@
-# change as per the requirement
+# =============================================================================
+# INFERENCE CONFIG — {{ model }} model
+# =============================================================================
+# This config runs batch scoring using the @champion model version from the
+# MLflow registry. Predictions are written to MODEL_CATALOG_SCHEMA.{{ model }}_predictions.
+#
+# TODO: Replace <ds_project> with the actual DS package name.
+#       Example: replace <ds_project> with fraud_ds
+#
+# The DS team needs to implement:
+#   - BatchScoring (run() → loads @champion model + scaler, scores input data,
+#                   returns a predictions DataFrame)
+#
+# Input:  merged_input.csv produced by inference/prepare_input step
+# Output: {{ model }}_predictions Delta table
+# =============================================================================
 
 version: '1.0'
 stage: inference
@@ -8,22 +23,29 @@ actions:
   - name: batch_prediction
     enable: true
     functions:
+      # TODO: Replace <ds_project> with the actual DS package name.
+      # DS team implements: run() → loads @champion model, scores merged_input.csv,
+      # returns a predictions DataFrame written to the output Delta table.
       class_path: <ds_project>.models.{{ model }}.inference.scoring:BatchScoring
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_prediction
         source_data_type: file
         target_data_type: databricks_table
+        # Model loaded from Unity Catalog registry using the @champion alias.
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
         inputs:
           # currently supports file/databricks_table
           file:
+            # Merged feature input produced by the prepare_input step.
             data: /data/input_preparation/merged_input.csv
-            pipeline: scaler.pkl # refers to the pkl file that was saved during training
+            # Scaler artifact saved during training — filename must match the training output.
+            pipeline: scaler.pkl
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Predictions are written here. Table is created if it does not exist.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"

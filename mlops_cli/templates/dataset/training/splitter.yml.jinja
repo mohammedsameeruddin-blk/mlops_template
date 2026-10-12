@@ -1,4 +1,10 @@
+# This snippet is merged into training/splitter.yml by the CLI.
+# It adds the {{ dataset_keyword }} Feature Store table as a feature source
+# for the train/test split step. The merge_on key and split parameters
+# are configured directly in training/splitter.yml after generation.
 databricks_table:
+  # Feature table written by the training featurization step.
+  # The CLI reads this at the Delta version pinned during featurization.
   {{ dataset_keyword }}:
       feature_run_name: {{ dataset_keyword }}_featurization
       feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"

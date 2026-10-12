@@ -1,4 +1,9 @@
+# This snippet is merged into inference/prepare_input.yml by the CLI.
+# It registers the {{ dataset_keyword }} inference Feature Store table as a source
+# for the input merge step. The merge_on key is configured directly in
+# inference/prepare_input.yml after generation.
 databricks_table:
+  # Inference Feature Store table written by inference/featurization.yml.
   {{ dataset_keyword }}:
       feature_run_name: {{ dataset_keyword }}_featurization
       feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"

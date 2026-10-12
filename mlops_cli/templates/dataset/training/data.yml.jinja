@@ -13,10 +13,13 @@ actions:
           file:
             data:
             pipeline:
+          # TODO: Replace <catalog.schema.table> with the fully qualified name of your
+          # raw training data source table. Example: main.raw_data.transaction_events
           databricks_table: <catalog.schema.table>
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Raw data is staged here for downstream preprocessing. Table name is auto-derived.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"

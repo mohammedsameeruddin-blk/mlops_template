@@ -2,6 +2,11 @@ actions:
   - name: {{ dataset_keyword }}_featurization
     enable: true
     functions:
+      # TODO: Replace <data_science_module_file_path> with the DS project's feature
+      # pipeline class path. Must be the same class used in training/featurization.yml.
+      # The class must expose a fit(df) method — retraining re-fits on fresh data.
+      # Format: <package>.<module>:<ClassName>
+      # Example: my_ds_project.featurization.pipeline:FeaturePipeline
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -11,14 +16,19 @@ actions:
         inputs:
           # currently supports file/databricks_table
           file:
+            # Cleaned CSV produced by retraining/preprocess.yml.
             data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
+            # Feature CSV consumed by the retraining train/test split step.
             data: /data/featurization/{{ dataset_keyword }}.csv
+            # Re-fitted pipeline artifact saved for this retraining run.
             pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
           databricks_table:
+            # Overwrites the training Feature Store table with the updated features.
             feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
-            primary_key: "{{ dataset_keyword }}_id" # change as per the requirement
+            # TODO: Replace with the actual primary key column. Must match training/featurization.yml.
+            primary_key: "{{ dataset_keyword }}_id"

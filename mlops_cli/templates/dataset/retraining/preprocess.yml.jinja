@@ -2,6 +2,10 @@ actions:
   - name: {{ dataset_keyword }}_preprocessing
     enable: true
     functions:
+      # TODO: Replace <data_science_module_file_path> with the DS project's preprocessing
+      # class path. Must be the same class used in training/preprocess.yml.
+      # Format: <package>.<module>:<ClassName>
+      # Example: my_ds_project.preprocessing.pipeline:DataPreprocessor
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -13,10 +17,12 @@ actions:
           file:
             data:
             pipeline:
+          # Reads from the retraining staging table written by retraining/data.yml.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
         outputs:
           # currently supports file/databricks_table
           file:
+            # Cleaned CSV consumed by retraining/featurization.yml.
             data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:

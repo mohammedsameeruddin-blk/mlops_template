@@ -1,4 +1,17 @@
-# change as per the requirement
+# =============================================================================
+# PROMOTION CONFIG — {{ model }} model
+# =============================================================================
+# Reads the serving metadata written by the serving workflow and shifts 100%
+# traffic to the challenger endpoint version. Sets the @champion alias and
+# removes @challenger from the MLflow registry.
+#
+# Run this workflow after validating the canary or blue-green split — i.e.,
+# after confirming that the challenger's metrics in the serving endpoint logs
+# are acceptable compared to the champion.
+#
+# No changes are required in this file. The metadata_path is injected at
+# runtime by promote_serving.py from the serving metadata JSON.
+# =============================================================================
 
 version: '1.0'
 stage: promotion

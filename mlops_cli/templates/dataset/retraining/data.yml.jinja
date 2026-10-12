@@ -13,10 +13,16 @@ actions:
           file:
             data:
             pipeline:
+          # TODO: Replace <catalog.schema.table> with the fully qualified name of your
+          # raw retraining data source table. This can be the same as the training source
+          # table or a refreshed snapshot — whichever contains the data to retrain on.
+          # Example: main.raw_data.transaction_events
           databricks_table: <catalog.schema.table>
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Raw data staged for retraining preprocessing. Overwrites the training staging
+          # table by design — retraining uses the same table name as training.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
