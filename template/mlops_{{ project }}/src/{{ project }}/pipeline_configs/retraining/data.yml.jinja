@@ -1,4 +1,18 @@
-# change as per the requirement
+# =============================================================================
+# DATA EXTRACTION CONFIG — retraining pipeline
+# =============================================================================
+# Same pattern as training/data.yml — reads raw data from a source table and
+# stages it for downstream preprocessing and featurization.
+#
+# This file is used when retraining is triggered (either manually or
+# automatically by drift monitoring). It can point to the same source table
+# as training, or to a refreshed/updated snapshot.
+#
+# TODO: Replace <catalog.schema.table> with the fully qualified name of the
+#       source table to retrain on.
+#       Example: main.raw_data.transaction_events
+#       (Can be the same as training/data.yml or a different snapshot.)
+# =============================================================================
 
 version: '1.0'
 stage: retraining
@@ -19,10 +33,12 @@ actions:
           file:
             data:
             pipeline:
+          # TODO: Replace with the source table for retraining data.
           databricks_table: <catalog.schema.table>
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Overwrites the training staging table — retraining uses the same table name by design.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"

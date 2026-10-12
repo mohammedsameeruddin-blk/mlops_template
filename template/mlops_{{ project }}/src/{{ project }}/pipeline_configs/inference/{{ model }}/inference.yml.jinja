@@ -1,4 +1,21 @@
-# change as per the requirement
+# =============================================================================
+# INFERENCE CONFIG — {{ model }} model
+# =============================================================================
+# Runs batch scoring using the @champion model version from the MLflow registry.
+# Predictions are written to MODEL_CATALOG_SCHEMA.{{ model }}_predictions.
+#
+# The DS team needs to implement BatchScoring in the {{ ds_project }} package:
+#   class_path: {{ ds_project }}.models.{{ model }}.inference.scoring:BatchScoring
+#   run() → loads the @champion model and scaler, scores merged_input.csv,
+#            returns a predictions DataFrame
+#
+# Input:  /data/input_preparation/merged_input.csv (produced by prepare_input step)
+# Scaler: scaler.pkl (artifact saved during training — filename must match)
+# Output: MODEL_CATALOG_SCHEMA.{{ model }}_predictions Delta table
+#
+# No class_path changes are needed here — the path is already wired via the
+# ds_project Copier variable. Verify it matches the actual DS package structure.
+# =============================================================================
 
 version: '1.0'
 stage: inference
@@ -8,22 +25,29 @@ actions:
   - name: batch_prediction
     enable: true
     functions:
+      # DS team implements: run() → loads @champion model + scaler from MLflow registry,
+      # scores the merged input CSV, returns a predictions DataFrame.
       class_path: {{ ds_project }}.models.{{ model }}.inference.scoring:BatchScoring
       kwargs:
         project_name: {{ project }}
         process_name: {{ model }}_prediction
         source_data_type: file
         target_data_type: databricks_table
+        # Model loaded from Unity Catalog registry using the @champion alias.
         model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
         inputs:
           # currently supports file/databricks_table
           file:
+            # Merged feature input produced by the prepare_input step.
             data: /data/input_preparation/merged_input.csv
-            pipeline: scaler.pkl # refers to the pkl file that was saved during training
+            # Scaler artifact saved during training.
+            # TODO: Update this filename if your training step saves the scaler under a different name.
+            pipeline: scaler.pkl
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
             data:
             pipeline:
+          # Predictions Delta table — created if it does not exist, overwritten on each run.
           databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_predictions"

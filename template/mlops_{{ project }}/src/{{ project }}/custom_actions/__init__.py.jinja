@@ -2,30 +2,54 @@
 # CUSTOM ACTIONS
 # =============================================================================
 # Add project-specific action classes here when the built-in scaffold steps
-# (data extraction, preprocessing, featurization, training, inference) are not
-# enough. Custom actions plug into any pipeline step via the class_path field
-# in the corresponding pipeline config YAML.
+# do not cover a required step (e.g., post-processing, data quality gates,
+# writing to external systems, custom notifications).
+#
+# HOW THE CALLING CONVENTION WORKS
+# ----------------------------------
+# Each pipeline script (data_preprocessing.py, train.py, etc.) loads an action
+# class via class_path and calls it as:
+#
+#     instance = MyClass(config=func_kwargs, data=df)
+#     result   = instance.run()
+#
+# Where `func_kwargs` is the entire `kwargs:` block from the YAML `functions:`
+# section. Your class receives this as `config` and must read `config["outputs"]`
+# to know where to write its result.
 #
 # HOW TO ADD A CUSTOM ACTION
 # --------------------------
-# 1. Create a class below that inherits from BaseAction (or is standalone).
-# 2. Implement the run(**kwargs) method with your logic.
-# 3. Reference the class in any pipeline config YAML under class_path:
+# Option A — add the class directly to this file.
+# Option B — create a new .py file inside this custom_actions/ directory.
 #
-#      class_path: {{ project }}.custom_actions:MyCustomAction
-#      kwargs:
-#        project_name: {{ project }}
-#        my_param: some_value
+# Either way, reference it in any pipeline config YAML:
 #
-# 4. The kwargs in the YAML are unpacked and passed to run() by the script.
+#   functions:
+#     class_path: {{ project }}.custom_actions:MyClass          # Option A
+#     class_path: {{ project }}.custom_actions.my_file:MyClass  # Option B
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: my_step
+#       source_data_type: file          # or databricks_table
+#       target_data_type: file          # or databricks_table
+#       inputs:
+#         file:
+#           data: /data/some/input.csv
+#         databricks_table:
+#       outputs:                        # REQUIRED — tells the class where to write
+#         file:
+#           data: /data/some/output.csv
+#         databricks_table:
+#
+# The `outputs:` block is mandatory in the YAML kwargs. Without it the class
+# does not know where to write its result.
 #
 # WHAT GOES HERE (examples)
 # --------------------------
-#   - Post-prediction transformations (e.g., applying business rules to scores)
+#   - Post-prediction transforms (e.g., applying business rules to scores)
 #   - Custom data quality gates (fail the pipeline if a threshold is not met)
-#   - Writing results to an external system (e.g., Cosmos DB, REST API)
+#   - Writing results to an external system (e.g., REST API, Cosmos DB)
 #   - Custom notification steps
-#   - Feature engineering that does not fit the featurization pipeline pattern
 #
 # WHAT DOES NOT GO HERE
 # ----------------------
@@ -39,51 +63,63 @@ from loguru import logger
 
 
 class BaseAction:
-    """Minimal interface expected by the MLOps pipeline scripts.
+    """Base class for custom actions.
 
-    Every action class called via class_path must either inherit from this
-    base class or implement a compatible run() method.
+    The pipeline script instantiates the class as:
+        instance = MyClass(config=func_kwargs, data=df)
+        result   = instance.run()
+
+    `config` is the full `functions.kwargs` dict from the YAML, which includes
+    `inputs`, `outputs`, `source_data_type`, `target_data_type`, and any custom
+    kwargs you define. Use `config["outputs"]` to resolve the write target.
     """
 
-    def __init__(self, project_name: str, process_name: str, **kwargs):
-        self.project_name = project_name
-        self.process_name = process_name
-        self.kwargs = kwargs
+    def __init__(self, config: dict, data=None, **kwargs):
+        self.config = config       # Full functions.kwargs dict from the YAML
+        self.data = data           # Input DataFrame loaded by the pipeline script
+        self.outputs = config.get("outputs", {})
 
-    def run(self, **kwargs):
+    def run(self):
         raise NotImplementedError(
-            f"{self.__class__.__name__} must implement run(**kwargs)"
+            f"{self.__class__.__name__} must implement run()"
         )
 
 
 # =============================================================================
-# ADD YOUR CUSTOM ACTION CLASSES BELOW OR CREATE A NEW SCRIPTS FILE IF NEEDED.
+# ADD YOUR CUSTOM ACTION CLASSES BELOW, OR CREATE A NEW .py FILE IN THIS FOLDER
 # =============================================================================
 
-# Example: a post-processing step that applies a business rule to predictions.
+# Example: apply a confidence threshold to predictions before writing them.
 #
-# class ApplyBusinessRules(BaseAction):
-#     """Apply a hard-coded confidence threshold to model predictions.
+# YAML config:
+#   functions:
+#     class_path: {{ project }}.custom_actions:ApplyConfidenceThreshold
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: {{ model }}_postprocess
+#       source_data_type: databricks_table
+#       target_data_type: databricks_table
+#       inputs:
+#         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions"
+#       outputs:                         # REQUIRED
+#         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions_filtered"
+#       confidence_threshold: 0.75       # custom kwarg
 #
-#     YAML config example:
-#         class_path: {{ project }}.custom_actions:ApplyBusinessRules
-#         kwargs:
-#           project_name: {{ project }}
-#           process_name: {{ model }}_postprocess
-#           confidence_threshold: 0.75
-#           predictions_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions"
-#     """
-#
-#     def run(self, confidence_threshold: float = 0.5, predictions_table: str = "", **kwargs):
+# class ApplyConfidenceThreshold(BaseAction):
+#     def run(self):
 #         from pyspark.sql import SparkSession
-#         spark = SparkSession.builder.getOrCreate()
 #
-#         df = spark.table(predictions_table)
-#         filtered = df.filter(df["prediction_score"] >= confidence_threshold)
-#         filtered.write.mode("overwrite").saveAsTable(predictions_table)
+#         threshold = self.config.get("confidence_threshold", 0.5)
+#         source    = self.config["inputs"]["databricks_table"]
+#         target    = self.outputs["databricks_table"]
+#
+#         spark = SparkSession.builder.getOrCreate()
+#         df = spark.table(source)
+#         filtered = df.filter(df["prediction_score"] >= threshold)
+#         filtered.write.mode("overwrite").saveAsTable(target)
 #
 #         logger.info(
-#             "Applied confidence threshold %.2f — kept %d / %d rows",
-#             confidence_threshold, filtered.count(), df.count(),
+#             "Threshold %.2f applied — kept %d / %d rows → %s",
+#             threshold, filtered.count(), df.count(), target,
 #         )
-#         return filtered
+#         return filtered.toPandas()

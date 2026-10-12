@@ -155,6 +155,35 @@ class_path: {{ ds_project }}.preprocessing.pipeline:DataPreprocessor
 
 ---
 
+## Extending the Project
+
+Models and datasets are added to an existing project using the **mlops-cli** tool, not Copier. Copier only generates the initial scaffold; the CLI handles all subsequent onboarding.
+
+### Add a New Model
+
+```bash
+mlops-cli add-model mlops_{{ project }}/ --model-name <new_model_name>
+```
+
+Generates per-model config YAMLs under each pipeline stage and adds the corresponding workflow job. After running, open each generated file and replace `<ds_project>` with the actual DS package name.
+
+### Add a New Dataset
+
+```bash
+mlops-cli add-dataset mlops_{{ project }}/ --dataset-name <new_dataset_name>
+```
+
+Merges the new dataset's data extraction, preprocessing, featurization, and splitter/prepare_input actions into the existing training, inference, and retraining pipeline configs. After running, replace `<catalog.schema.table>` and `<data_science_module_file_path>` placeholders in the updated files.
+
+### Remove a Model or Dataset
+
+```bash
+mlops-cli remove-model  mlops_{{ project }}/ --model-name <model_name>
+mlops-cli remove-dataset mlops_{{ project }}/ --dataset-name <dataset_name>
+```
+
+---
+
 ## Adding Custom Actions
 
 If you need steps that do not fit the DS-project class pattern (e.g., a post-processing step, a custom notification, or a data quality gate), add your class to `src/{{ project }}/custom_actions/__init__.py` and reference it via `class_path` in any pipeline config YAML:

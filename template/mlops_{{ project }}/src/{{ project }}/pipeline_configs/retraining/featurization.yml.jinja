@@ -1,4 +1,18 @@
-# change as per the requirement
+# =============================================================================
+# FEATURIZATION CONFIG — retraining pipeline (fit mode)
+# =============================================================================
+# Retraining re-FITS the feature pipeline on fresh data (unlike inference which
+# only transforms). This updates the Feature Store table and saves a new
+# pipeline artifact for this retraining run.
+#
+# TODO: Replace <data_science_module_file_path> with the same featurization
+#       class used in training/featurization.yml.
+#       Format: <package>.<module>.<submodule>:<ClassName>
+#       Example: {{ ds_project }}.featurization.pipeline:FeaturePipeline
+#
+# TODO: Replace "{{ dataset_keyword }}_id" with the actual primary key column.
+#       Must match training/featurization.yml.
+# =============================================================================
 
 version: '1.0'
 stage: retraining
@@ -8,6 +22,8 @@ actions:
   - name: {{ dataset_keyword }}_featurization
     enable: true
     functions:
+      # TODO: Replace with the DS project's featurization class path (same as training).
+      # The class is called with .fit() — retraining re-fits on fresh data.
       class_path: <data_science_module_file_path>
       kwargs:
         project_name: {{ project }}
@@ -17,14 +33,19 @@ actions:
         inputs:
           # currently supports file/databricks_table
           file:
+            # Cleaned CSV produced by retraining/preprocess.yml.
             data: /data/preprocessing/{{ dataset_keyword }}.csv
             pipeline:
           databricks_table:
         outputs:
           # currently supports file/databricks_table
           file:
+            # Feature CSV consumed by the retraining train/test split step.
             data: /data/featurization/{{ dataset_keyword }}.csv
+            # Re-fitted pipeline artifact saved to Volumes and logged to MLflow.
             pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
           databricks_table:
+            # Overwrites the training Feature Store table with updated features.
             feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
-            primary_key: "{{ dataset_keyword }}_id" # change as per the requirement
+            # TODO: Replace with the actual primary key column. Must match training/featurization.yml.
+            primary_key: "{{ dataset_keyword }}_id"
