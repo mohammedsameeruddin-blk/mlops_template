@@ -186,19 +186,33 @@ mlops-cli remove-dataset mlops_{{ project }}/ --dataset-name <dataset_name>
 
 ## Adding Custom Actions
 
-If you need steps that do not fit the DS-project class pattern (e.g., a post-processing step, a custom notification, or a data quality gate), add your class to `src/{{ project }}/custom_actions/__init__.py` and reference it via `class_path` in any pipeline config YAML:
+Custom actions are for steps that do not fit the DS-project class pattern — post-processing, custom quality gates, writing to external systems, etc.
+
+**Add the class** to `src/{{ project }}/custom_actions/__init__.py` (Option A), or create a new `.py` file in that directory (Option B).
+
+**Reference it** in any pipeline config YAML via `class_path`. The pipeline script will call:
+
+```python
+instance = MyClass(config=func_kwargs, data=df)
+result   = instance.run()
+```
+
+`config` is the entire `kwargs:` block from your YAML entry. Include `inputs:` / `outputs:` only if your class reads or writes data — a pure-action class (notification, API call, quality gate) needs neither.
 
 ```yaml
 - name: my_custom_step
   enable: true
   functions:
-    class_path: {{ project }}.custom_actions:MyCustomAction
+    class_path: {{ project }}.custom_actions:MyCustomAction        # Option A
+    # class_path: {{ project }}.custom_actions.my_file:MyCustomAction  # Option B
     kwargs:
       project_name: {{ project }}
-      # ... your kwargs
+      process_name: my_step
+      # Add any kwargs your class needs.
+      # inputs: / outputs: are optional — omit them for pure-action classes.
 ```
 
-See `src/{{ project }}/custom_actions/__init__.py` for the base class interface.
+See `src/{{ project }}/custom_actions/__init__.py` for the `BaseAction` interface and a commented-out example.
 
 ---
 

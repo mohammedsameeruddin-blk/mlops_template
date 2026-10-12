@@ -30,26 +30,18 @@
 #     kwargs:
 #       project_name: {{ project }}
 #       process_name: my_step
-#       source_data_type: file          # or databricks_table
-#       target_data_type: file          # or databricks_table
-#       inputs:
-#         file:
-#           data: /data/some/input.csv
-#         databricks_table:
-#       outputs:                        # REQUIRED — tells the class where to write
-#         file:
-#           data: /data/some/output.csv
-#         databricks_table:
-#
-# The `outputs:` block is mandatory in the YAML kwargs. Without it the class
-# does not know where to write its result.
+#       # Add any kwargs your class needs. inputs/outputs are optional —
+#       # include them only if your class reads data or writes a result.
+#       # A class that just performs an action (API call, notification,
+#       # quality check) needs no inputs or outputs at all.
 #
 # WHAT GOES HERE (examples)
 # --------------------------
 #   - Post-prediction transforms (e.g., applying business rules to scores)
-#   - Custom data quality gates (fail the pipeline if a threshold is not met)
+#   - Custom data quality gates (raise an exception if a threshold is not met)
 #   - Writing results to an external system (e.g., REST API, Cosmos DB)
-#   - Custom notification steps
+#   - Custom notification / alerting steps
+#   - Any side-effect action that does not fit the DS-project class pattern
 #
 # WHAT DOES NOT GO HERE
 # ----------------------
@@ -69,15 +61,20 @@ class BaseAction:
         instance = MyClass(config=func_kwargs, data=df)
         result   = instance.run()
 
-    `config` is the full `functions.kwargs` dict from the YAML, which includes
-    `inputs`, `outputs`, `source_data_type`, `target_data_type`, and any custom
-    kwargs you define. Use `config["outputs"]` to resolve the write target.
+    `config` is the full `functions.kwargs` dict from the YAML — any kwargs
+    you define there are available via self.config. `data` is the DataFrame
+    loaded by the pipeline script (may be None for pure-action classes that
+    do not operate on data).
+
+    A custom action can:
+      - Transform data and return a DataFrame (include inputs/outputs in kwargs)
+      - Perform a side-effect (API call, notification, audit log) and return None
+      - Act as a quality gate — raise an exception to halt the pipeline
     """
 
     def __init__(self, config: dict, data=None, **kwargs):
         self.config = config       # Full functions.kwargs dict from the YAML
-        self.data = data           # Input DataFrame loaded by the pipeline script
-        self.outputs = config.get("outputs", {})
+        self.data = data           # Input DataFrame (None for pure-action classes)
 
     def run(self):
         raise NotImplementedError(
@@ -89,6 +86,9 @@ class BaseAction:
 # ADD YOUR CUSTOM ACTION CLASSES BELOW, OR CREATE A NEW .py FILE IN THIS FOLDER
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# EXAMPLE A — data transform (reads input, writes output)
+# ---------------------------------------------------------------------------
 # Example: apply a confidence threshold to predictions before writing them.
 #
 # YAML config:
@@ -101,9 +101,9 @@ class BaseAction:
 #       target_data_type: databricks_table
 #       inputs:
 #         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions"
-#       outputs:                         # REQUIRED
+#       outputs:
 #         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions_filtered"
-#       confidence_threshold: 0.75       # custom kwarg
+#       confidence_threshold: 0.75
 #
 # class ApplyConfidenceThreshold(BaseAction):
 #     def run(self):
@@ -111,7 +111,7 @@ class BaseAction:
 #
 #         threshold = self.config.get("confidence_threshold", 0.5)
 #         source    = self.config["inputs"]["databricks_table"]
-#         target    = self.outputs["databricks_table"]
+#         target    = self.config["outputs"]["databricks_table"]
 #
 #         spark = SparkSession.builder.getOrCreate()
 #         df = spark.table(source)
@@ -123,3 +123,30 @@ class BaseAction:
 #             threshold, filtered.count(), df.count(), target,
 #         )
 #         return filtered.toPandas()
+
+# ---------------------------------------------------------------------------
+# EXAMPLE B — pure action (no inputs / outputs needed)
+# ---------------------------------------------------------------------------
+# Example: notify an external system after inference completes.
+#
+# YAML config:
+#   functions:
+#     class_path: {{ project }}.custom_actions:NotifyExternalSystem
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: {{ model }}_notify
+#       endpoint_url: "https://example.com/api/trigger"
+#       payload_key: "my_value"
+#
+# class NotifyExternalSystem(BaseAction):
+#     def run(self):
+#         import requests
+#
+#         url     = self.config["endpoint_url"]
+#         payload = {"key": self.config.get("payload_key", "default")}
+#
+#         response = requests.post(url, json=payload, timeout=10)
+#         response.raise_for_status()
+#
+#         logger.info("External system notified — status %d", response.status_code)
+#         # No return value needed for a pure side-effect action.
