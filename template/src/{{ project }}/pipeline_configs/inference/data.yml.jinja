@@ -1,0 +1,42 @@
+# =============================================================================
+# DATA EXTRACTION CONFIG — inference pipeline
+# =============================================================================
+# This step reads incoming (unlabelled) data from a source Databricks table
+# and writes it to a staging table so downstream preprocessing can consume it.
+#
+# TODO: Replace <catalog.schema.table> with the fully qualified name of the
+#       table that holds your incoming inference data (not the training data).
+#       This is typically a table that is refreshed on each inference run.
+#       Example: main.raw_data.transaction_events_incoming
+#
+# Note: The output table name ends in _incoming_raw_data to distinguish it
+#       from the training staging table (which ends in _raw_data).
+# =============================================================================
+
+version: '1.0'
+stage: inference
+file: data.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: {{ dataset_keyword }}_extraction
+    enable: true
+    functions:
+      class_path: {{ project }}.common.data.data_loader:load_data
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_data
+        source_data_type: databricks_table
+        target_data_type: databricks_table
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          # TODO: Replace with the fully qualified source table for incoming inference data.
+          databricks_table: <catalog.schema.table>
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_raw_data"

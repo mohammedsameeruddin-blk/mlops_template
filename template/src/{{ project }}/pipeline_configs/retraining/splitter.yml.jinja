@@ -1,0 +1,81 @@
+# =============================================================================
+# TRAIN/TEST SPLIT CONFIG — retraining pipeline
+# =============================================================================
+# Same structure as training/splitter.yml — merges feature tables and splits
+# into train/test sets for the retraining model training step.
+#
+# Data source — choose ONE mode and leave the other commented out:
+#
+#   databricks_table (default / recommended)
+#     Reads features from the Feature Store at the Delta version pinned during
+#     retraining featurization.
+#
+#   file (alternative)
+#     Reads from the CSV files written to Volumes by retraining/featurization.yml.
+#
+# TODO: Replace <merge_key> with the column name used to join feature tables.
+#       Must match the value in training/splitter.yml.
+#       Example: transaction_id  or  customer_id
+#
+# TODO: Replace <target> with the label/target column for stratified splitting.
+#       Set stratify to null to disable stratification (e.g., for regression).
+# =============================================================================
+
+version: '1.0'
+stage: retraining
+file: splitter.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: train_test_split
+    enable: true
+    functions:
+      class_path: {{ project }}.common.data.data_splitter:DataOperations
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_data_split
+        # Set to file if reading from Volumes CSVs instead of Feature Store.
+        source_data_type: databricks_table
+        target_data_type: file
+        inputs:
+          # --- FILE MODE (alternative) ---
+          # Uncomment this block and comment out databricks_table below to read
+          # feature CSVs from Volumes instead of the Feature Store.
+          # file:
+          #   features:
+          #     {{ dataset_keyword }}:
+          #       data: /data/featurization/{{ dataset_keyword }}.csv
+          #   merge:
+          #     how: inner # inner | outer | left | right
+          #     merge_on: <merge_key>
+          #   split:
+          #     test_size: 0.2
+          #     random_state: 42
+          #     stratify: <target>
+          file:
+            pipeline:
+          # --- DATABRICKS TABLE MODE (default) ---
+          databricks_table:
+            features:
+              # Add one entry per feature table if merging multiple sources.
+              # Additional datasets are added here by mlops-cli add-dataset.
+              {{ dataset_keyword }}:
+                feature_run_name: {{ dataset_keyword }}_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_features"
+            merge:
+              how: inner
+              # TODO: Replace with the column name to join feature tables on.
+              merge_on: <merge_key>
+            split:
+              test_size: 0.2
+              random_state: 42
+              # TODO: Replace with the label/target column for stratified splitting.
+              # Set to null to disable stratification (e.g., for regression tasks).
+              stratify: <target>
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            merged: /data/training/merged_features.csv
+            train:  /data/training/train.csv
+            test:   /data/training/test.csv
+            pipeline:
+          databricks_table:

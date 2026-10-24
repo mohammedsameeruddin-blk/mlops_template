@@ -1,0 +1,344 @@
+import argparse
+import importlib
+import json
+
+from loguru import logger
+from pyspark.sql import SparkSession
+
+try:
+    from pyspark.dbutils import DBUtils  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    DBUtils = None
+
+from {{ project }}.common.utils.config_utils import (
+    load_project_config,
+    load_task_config,
+)
+from {{ project }}.common.utils.notify_utils import (
+    send_gchat_drift_summary,
+    send_gchat_failure,
+    send_gchat_inference_success,
+    send_gchat_promotion_success,
+    send_gchat_serving_success,
+    send_gchat_training_success,
+)
+
+
+def load_class(class_path: str):
+    module_path, class_name = class_path.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
+
+def get_task_value(dbutils, task_key: str, key: str, default=None):
+    if dbutils is None:
+        logger.warning(
+            f"dbutils is unavailable while reading task value '{task_key}:{key}'"
+        )
+        return default
+
+    try:
+        return dbutils.jobs.taskValues.get(taskKey=task_key, key=key)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            f"Could not read task value '{task_key}:{key}'; using default. Error: {e}"
+        )
+        return default
+
+
+def main(spark, dbutils=None):
+    dbutils = dbutils or globals().get("dbutils")
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--root_path", required=True)
+    parser.add_argument("--runtime_env", required=True)
+    parser.add_argument("--yml_task", required=True)
+    parser.add_argument("--project_name", required=True)
+    parser.add_argument("--model_name", required=True)
+    parser.add_argument("--stage_name", required=True)
+    parser.add_argument("--task_key", required=True)
+    parser.add_argument("--task_run_id", required=True)
+    parser.add_argument("--job_name", required=True)
+    parser.add_argument("--job_id", required=True)
+    parser.add_argument("--job_run_id", required=True)
+    parser.add_argument("--experiment_id", required=True)
+    # optional args
+    parser.add_argument("--models_registered", default="none")
+    parser.add_argument("--models_used", default="none")
+    parser.add_argument("--models_served", default="none")
+    parser.add_argument("--models_promoted", default="none")
+
+    args = parser.parse_args()
+    runtime_env = args.runtime_env.lower()
+    yml_task = args.yml_task
+    project_name = args.project_name
+    model_name = args.model_name
+    stage_name = args.stage_name
+    task_key = args.task_key
+    job_name = args.job_name
+    job_id = args.job_id
+    job_run_id = args.job_run_id
+    experiment_id = args.experiment_id
+
+    models_registered_list = []
+    models_used_list = []
+    models_and_versions_train = {}
+    models_and_versions_inference = {}
+    models_and_versions_retrain = {}
+    models_and_versions_serving = {}
+    models_and_versions_promotion = {}
+    if args.stage_name == "training":
+        models_registered_list = [
+            m.strip()
+            for m in args.models_registered.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models registered: {models_registered_list}")
+        for model_reg in models_registered_list:
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_training",
+                key=model_reg,
+            )
+            models_and_versions_train[model_reg] = spec_model_version
+    elif args.stage_name == "inference":
+        models_used_list = [
+            m.strip()
+            for m in args.models_used.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models used for inference: {models_used_list}")
+        for model_reg in models_used_list:
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_inference",
+                key=model_reg,
+            )
+            models_and_versions_inference[model_reg] = spec_model_version
+    elif args.stage_name == "retraining":
+        models_registered_list = [
+            m.strip()
+            for m in args.models_registered.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models registered: {models_registered_list}")
+        for model_reg in models_registered_list:
+            spec_model_version = get_task_value(
+                dbutils,
+                task_key=f"{model_reg}_retraining",
+                key=model_reg,
+            )
+            models_and_versions_retrain[model_reg] = spec_model_version
+    elif args.stage_name == "serving":
+        models_served_list = [
+            m.strip()
+            for m in args.models_served.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models served: {models_served_list}")
+        for model in models_served_list:
+            endpoint_name = get_task_value(
+                dbutils,
+                task_key=f"{model}_serving",
+                key=f"{model}_endpoint",
+            )
+            strategy = get_task_value(
+                dbutils,
+                task_key=f"{model}_serving",
+                key=f"{model}_strategy",
+            )
+            models_and_versions_serving[model] = {
+                "endpoint": endpoint_name,
+                "strategy": strategy,
+            }
+    elif args.stage_name == "promotion":
+        models_promoted_list = [
+            m.strip()
+            for m in args.models_promoted.split(",")
+            if m.strip() and m.strip().lower() != "none"
+        ]
+        logger.info(f"Models promoted: {models_promoted_list}")
+        for model in models_promoted_list:
+            promoted_version = get_task_value(
+                dbutils,
+                task_key=f"{model}_promotion",
+                key=f"{model}_promoted",
+            )
+            strategy = get_task_value(
+                dbutils,
+                task_key=f"{model}_promotion",
+                key=f"{model}_strategy",
+            )
+            models_and_versions_promotion[model] = {
+                "version": promoted_version,
+                "strategy": strategy,
+            }
+    elif args.stage_name == "drift_monitoring":
+        try:
+            drifted_models_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="drifted_models",
+            )
+            drift_types_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="drift_types",
+            )
+            model_summaries_str = get_task_value(
+                dbutils,
+                task_key="evaluate_drift_results",
+                key="model_summaries",
+            )
+            drift_drifted_models = (
+                [m for m in drifted_models_str.split(",") if m]
+                if drifted_models_str
+                else []
+            )
+            drift_drift_types = (
+                [t for t in drift_types_str.split(",") if t] if drift_types_str else []
+            )
+            drift_model_summaries = (
+                json.loads(model_summaries_str) if model_summaries_str else {}
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"Could not read drift summary task values; using defaults. Error: {e}"
+            )
+            drift_drifted_models = []
+            drift_drift_types = []
+            drift_model_summaries = {}
+
+    # load config from TOML based on runtime_env
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
+    if not env_context:
+        raise ValueError(f"Environment '{runtime_env}' not found in config.toml")
+
+    # load and render task YAML
+    task_config = load_task_config(
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
+    )
+    actions_config = task_config.get("actions", [])
+
+    for aconf in actions_config:
+        action_name = aconf["name"]
+
+        logger.info(f"Starting action: {action_name}")
+        error_details = ""
+
+        workspace_url = env_context["WORKSPACE_URL"].rstrip("/")
+        run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
+        env_name_notify = runtime_env.upper()
+        models_notify = []
+        if stage_name == "training":
+            models_notify = models_and_versions_train
+        elif stage_name == "inference":
+            models_notify = models_and_versions_inference
+        elif stage_name == "retraining":
+            models_notify = models_and_versions_retrain
+        elif stage_name == "serving":
+            models_notify = models_and_versions_serving
+        elif stage_name == "promotion":
+            models_notify = models_and_versions_promotion
+        experiment_url = (
+            f"{workspace_url}/#mlflow/experiments/{experiment_id}"
+            if experiment_id
+            else None
+        )
+
+        try:
+            # assumes 'spark' is provided by Databricks environment
+            if stage_name == "training":
+                send_gchat_training_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    stage_name=stage_name,
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "inference":
+                send_gchat_inference_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "retraining":
+                send_gchat_training_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    stage_name=stage_name,
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "serving":
+                send_gchat_serving_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "promotion":
+                send_gchat_promotion_success(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    models=models_notify,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+            elif stage_name == "drift_monitoring":
+                send_gchat_drift_summary(
+                    webhook_url=env_context["WEBHOOK_URL"],
+                    environment=env_name_notify,
+                    project=project_name,
+                    model_summaries=drift_model_summaries,
+                    drifted_models=drift_drifted_models,
+                    drift_types=drift_drift_types,
+                    job_name=job_name,
+                    run_url=run_url,
+                    experiment_url=experiment_url,
+                )
+        except Exception as e:
+            error_details = str(e)[:500]
+            logger.error(f"Action failed: {action_name}")
+            send_gchat_failure(
+                webhook_url=env_context["WEBHOOK_URL"],
+                environment=env_name_notify,
+                project=project_name,
+                task=task_key,
+                job_name=job_name,
+                error_message=error_details,
+                run_url=run_url,
+            )
+            raise
+        finally:
+            logger.success(f"Ended the setup for {stage_name}; {project_name}")
+
+    return experiment_id, models_notify
+
+
+if __name__ == "__main__":
+    spark = SparkSession.builder.getOrCreate()
+    dbutils = DBUtils(spark) if DBUtils is not None else None
+
+    experiment_id, models_notify = main(spark=spark)
+    if dbutils is not None:
+        dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)

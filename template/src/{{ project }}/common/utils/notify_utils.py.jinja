@@ -1,0 +1,399 @@
+import requests
+from loguru import logger
+
+
+def send_gchat_failure(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    task: str,
+    job_name: str,
+    error_message: str,
+    run_url: str,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "error_failure",
+                "card": {
+                    "header": {
+                        "title": "🚨 Databricks Job Failed",
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Task:</b> {task}<br>"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Error:</b> {error_message}"
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "widgets": [
+                                {
+                                    "buttonList": {
+                                        "buttons": [
+                                            {
+                                                "text": "Open Run",
+                                                "onClick": {
+                                                    "openLink": {"url": run_url}
+                                                },
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+
+    logger.info("🚨 Google Chat failure alert sent successfully")
+
+
+def send_gchat_inference_success(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    models_bullets = "".join(
+        f"• <i>{model} → {version}</i><br>" for model, version in models.items()
+    )
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "inference_success",
+                "card": {
+                    "header": {
+                        "title": "✅ Inference Job Succeeded",
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Models Used:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+
+    logger.info("✅ Google Chat inference success alert sent successfully")
+
+
+def send_gchat_training_success(
+    webhook_url: str | None,
+    stage_name: str,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    models_bullets = "".join(
+        f"• <i>{model} → {version}</i><br>" for model, version in models.items()
+    )
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "training_success",
+                "card": {
+                    "header": {
+                        "title": f"✅ {stage_name.capitalize()} Job Succeeded",
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Models Registered:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+
+    logger.info("✅ Google Chat training success alert sent successfully")
+
+
+def send_gchat_serving_success(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    models_bullets = ""
+    for model, info in models.items():
+        if isinstance(info, dict):
+            endpoint = info.get("endpoint", "unknown")
+            strategy = info.get("strategy", "direct")
+            models_bullets += f"• <i>{model} → {endpoint} [{strategy}]</i><br>"
+        else:
+            models_bullets += f"• <i>{model} → {info}</i><br>"
+
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "serving_success",
+                "card": {
+                    "header": {
+                        "title": "✅ Serving Deployment Succeeded",
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Endpoints Deployed:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+    logger.info("✅ Google Chat serving deployment alert sent successfully")
+
+
+def send_gchat_promotion_success(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    models: dict,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    models_bullets = ""
+    for model, info in models.items():
+        if isinstance(info, dict):
+            version = info.get("version", "unknown")
+            strategy = info.get("strategy", "direct")
+            models_bullets += (
+                f"• <i>{model} → @champion v{version} [{strategy}]</i><br>"
+            )
+        else:
+            models_bullets += f"• <i>{model} → {info}</i><br>"
+
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "promotion_success",
+                "card": {
+                    "header": {
+                        "title": "🚀 Model Promotion Succeeded",
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Models Promoted:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+    logger.info("🚀 Google Chat promotion success alert sent successfully")
+
+
+def send_gchat_drift_summary(
+    webhook_url: str | None,
+    environment: str,
+    project: str,
+    model_summaries: dict,
+    drifted_models: list,
+    drift_types: list,
+    job_name: str,
+    run_url: str,
+    experiment_url: str | None = None,
+):
+    if webhook_url is None:
+        logger.warning("No webhook URL provided, skipping Google Chat notification")
+        return
+
+    has_any_drift = bool(drifted_models)
+    title = "⚠️ Drift Detected" if has_any_drift else "✅ No Drift Detected"
+
+    models_bullets = ""
+    for model, info in model_summaries.items():
+        if isinstance(info, dict):
+            if info["has_drift"]:
+                types = (
+                    ", ".join(info["drift_types"]) if info["drift_types"] else "drift"
+                )
+                severity = info["top_severity"]
+                models_bullets += f"• <i>{model} → {types} [{severity}]</i><br>"
+            else:
+                models_bullets += f"• <i>{model} → no drift</i><br>"
+        else:
+            models_bullets += f"• <i>{model} → {info}</i><br>"
+
+    buttons = [{"text": "Open Run", "onClick": {"openLink": {"url": run_url}}}]
+    if experiment_url:
+        buttons.append(
+            {
+                "text": "Open Experiment",
+                "onClick": {"openLink": {"url": experiment_url}},
+            }
+        )
+
+    payload = {
+        "cardsV2": [
+            {
+                "cardId": "drift_summary",
+                "card": {
+                    "header": {
+                        "title": title,
+                        "subtitle": f"Environment: {environment}",
+                    },
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": f"<b>Project:</b> {project}<br>"
+                                        f"\n<b>Models Summary:</b><br>"
+                                        f"{models_bullets}"
+                                        f"\n<b>Job:</b> {job_name}<br>"
+                                        f"\n<b>Status:</b> SUCCESS"
+                                    }
+                                }
+                            ]
+                        },
+                        {"widgets": [{"buttonList": {"buttons": buttons}}]},
+                    ],
+                },
+            }
+        ]
+    }
+
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+    icon = "⚠️" if has_any_drift else "✅"
+    logger.info(f"{icon} Google Chat drift summary sent successfully")

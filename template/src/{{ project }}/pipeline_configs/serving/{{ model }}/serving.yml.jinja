@@ -1,0 +1,63 @@
+# =============================================================================
+# SERVING CONFIG — {{ model }} model
+# =============================================================================
+# This config deploys or updates the Databricks Model Serving endpoint for
+# the @challenger model version. Choose a deployment strategy based on your
+# release risk tolerance.
+#
+# Deployment strategies:
+#   direct     — Replaces the endpoint immediately with the challenger version.
+#                The @challenger alias is promoted to @champion right away.
+#                Use for low-risk models or when A/B testing is not required.
+#
+#   blue_green — Routes 100% traffic to the champion. The challenger is added
+#                at 0% traffic. Run wf_{{ project }}_promotion separately after
+#                validating the challenger in the endpoint logs.
+#
+#   canary     — Routes initial_traffic_pct% (default 10%) to the challenger.
+#                The rest goes to the champion. Run wf_{{ project }}_promotion
+#                after confirming metrics are acceptable.
+#
+# TODO: Choose a strategy that fits your release process.
+# TODO: Adjust workload_size to match expected inference throughput.
+#       Options: Small | Medium | Large
+# =============================================================================
+
+version: '1.0'
+stage: serving
+file: serving.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: deploy_endpoint
+    enable: true
+    functions:
+      class_path: {{ project }}.common.serving.deployer:ServingDeployer
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_serving
+        model_name: {{ model }}
+        model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}"
+        endpoint_name: {{ model }}_endpoint
+
+        deployment:
+          # TODO: Choose a strategy — direct | blue_green | canary
+          strategy: canary
+          # TODO: Choose serving compute size — Small | Medium | Large
+          workload_size: Small
+          scale_to_zero: true
+          canary:
+            # Percentage of traffic routed to the challenger on first deploy.
+            # The remaining traffic goes to the champion.
+            # Ignored when strategy is direct or blue_green.
+            initial_traffic_pct: 10
+
+        ## Champion-Challenger (two different model algorithms)
+        # Uncomment to split traffic between two separately registered models
+        # (e.g., XGBoost champion vs. LightGBM challenger). This is different
+        # from the version-based challenger above — it requires a separately
+        # named model registry entry.
+        #
+        # champion_challenger:
+        #   enable: false
+        #   challenger_model_registry_name: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ model }}_challenger"
+        #   challenger_traffic_pct: 20

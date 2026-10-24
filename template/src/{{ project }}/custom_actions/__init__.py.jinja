@@ -1,0 +1,152 @@
+# =============================================================================
+# CUSTOM ACTIONS
+# =============================================================================
+# Add project-specific action classes here when the built-in scaffold steps
+# do not cover a required step (e.g., post-processing, data quality gates,
+# writing to external systems, custom notifications).
+#
+# HOW THE CALLING CONVENTION WORKS
+# ----------------------------------
+# Each pipeline script (data_preprocessing.py, train.py, etc.) loads an action
+# class via class_path and calls it as:
+#
+#     instance = MyClass(config=func_kwargs, data=df)
+#     result   = instance.run()
+#
+# Where `func_kwargs` is the entire `kwargs:` block from the YAML `functions:`
+# section. Your class receives this as `config` and must read `config["outputs"]`
+# to know where to write its result.
+#
+# HOW TO ADD A CUSTOM ACTION
+# --------------------------
+# Option A — add the class directly to this file.
+# Option B — create a new .py file inside this custom_actions/ directory.
+#
+# Either way, reference it in any pipeline config YAML:
+#
+#   functions:
+#     class_path: {{ project }}.custom_actions:MyClass          # Option A
+#     class_path: {{ project }}.custom_actions.my_file:MyClass  # Option B
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: my_step
+#       # Add any kwargs your class needs. inputs/outputs are optional —
+#       # include them only if your class reads data or writes a result.
+#       # A class that just performs an action (API call, notification,
+#       # quality check) needs no inputs or outputs at all.
+#
+# WHAT GOES HERE (examples)
+# --------------------------
+#   - Post-prediction transforms (e.g., applying business rules to scores)
+#   - Custom data quality gates (raise an exception if a threshold is not met)
+#   - Writing results to an external system (e.g., REST API, Cosmos DB)
+#   - Custom notification / alerting steps
+#   - Any side-effect action that does not fit the DS-project class pattern
+#
+# WHAT DOES NOT GO HERE
+# ----------------------
+#   - Model training, evaluation, or hyperparameter tuning → belongs in {{ ds_project }}
+#   - Preprocessing → belongs in {{ ds_project }}
+#   - Generic data loading → use data_loader.py in common/data/
+
+from __future__ import annotations
+
+from loguru import logger
+
+
+class BaseAction:
+    """Base class for custom actions.
+
+    The pipeline script instantiates the class as:
+        instance = MyClass(config=func_kwargs, data=df)
+        result   = instance.run()
+
+    `config` is the full `functions.kwargs` dict from the YAML — any kwargs
+    you define there are available via self.config. `data` is the DataFrame
+    loaded by the pipeline script (may be None for pure-action classes that
+    do not operate on data).
+
+    A custom action can:
+      - Transform data and return a DataFrame (include inputs/outputs in kwargs)
+      - Perform a side-effect (API call, notification, audit log) and return None
+      - Act as a quality gate — raise an exception to halt the pipeline
+    """
+
+    def __init__(self, config: dict, data=None, **kwargs):
+        self.config = config       # Full functions.kwargs dict from the YAML
+        self.data = data           # Input DataFrame (None for pure-action classes)
+
+    def run(self):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement run()"
+        )
+
+
+# =============================================================================
+# ADD YOUR CUSTOM ACTION CLASSES BELOW, OR CREATE A NEW .py FILE IN THIS FOLDER
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# EXAMPLE A — data transform (reads input, writes output)
+# ---------------------------------------------------------------------------
+# Example: apply a confidence threshold to predictions before writing them.
+#
+# YAML config:
+#   functions:
+#     class_path: {{ project }}.custom_actions:ApplyConfidenceThreshold
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: {{ model }}_postprocess
+#       source_data_type: databricks_table
+#       target_data_type: databricks_table
+#       inputs:
+#         databricks_table: "<MODEL_CATALOG_SCHEMA>.{{ model }}_predictions"
+#       outputs:
+#         databricks_table: "<MODEL_CATALOG_SCHEMA>.{{ model }}_predictions_filtered"
+#       confidence_threshold: 0.75
+#
+# class ApplyConfidenceThreshold(BaseAction):
+#     def run(self):
+#         from pyspark.sql import SparkSession
+#
+#         threshold = self.config.get("confidence_threshold", 0.5)
+#         source    = self.config["inputs"]["databricks_table"]
+#         target    = self.config["outputs"]["databricks_table"]
+#
+#         spark = SparkSession.builder.getOrCreate()
+#         df = spark.table(source)
+#         filtered = df.filter(df["prediction_score"] >= threshold)
+#         filtered.write.mode("overwrite").saveAsTable(target)
+#
+#         logger.info(
+#             "Threshold %.2f applied — kept %d / %d rows → %s",
+#             threshold, filtered.count(), df.count(), target,
+#         )
+#         return filtered.toPandas()
+
+# ---------------------------------------------------------------------------
+# EXAMPLE B — pure action (no inputs / outputs needed)
+# ---------------------------------------------------------------------------
+# Example: notify an external system after inference completes.
+#
+# YAML config:
+#   functions:
+#     class_path: {{ project }}.custom_actions:NotifyExternalSystem
+#     kwargs:
+#       project_name: {{ project }}
+#       process_name: {{ model }}_notify
+#       endpoint_url: "https://example.com/api/trigger"
+#       payload_key: "my_value"
+#
+# class NotifyExternalSystem(BaseAction):
+#     def run(self):
+#         import requests
+#
+#         url     = self.config["endpoint_url"]
+#         payload = {"key": self.config.get("payload_key", "default")}
+#
+#         response = requests.post(url, json=payload, timeout=10)
+#         response.raise_for_status()
+#
+#         logger.info("External system notified — status %d", response.status_code)
+#         # No return value needed for a pure side-effect action.

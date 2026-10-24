@@ -1,0 +1,41 @@
+# =============================================================================
+# DATA EXTRACTION CONFIG — training pipeline
+# =============================================================================
+# This step reads raw data from a source Databricks table and writes it to a
+# staging table in MODEL_CATALOG_SCHEMA so downstream steps can consume it.
+#
+# TODO: Replace <catalog.schema.table> with the fully qualified name of the
+#       source table that holds your raw training data.
+#       Example: main.raw_data.transaction_events
+# =============================================================================
+
+version: '1.0'
+stage: training
+file: data.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: {{ dataset_keyword }}_extraction
+    enable: true
+    functions:
+      class_path: {{ project }}.common.data.data_loader:load_data
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_data
+        source_data_type: databricks_table
+        target_data_type: databricks_table
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          # TODO: Replace <catalog.schema.table> with your raw source table name.
+          # This is the table that load_data() will read from.
+          databricks_table: <catalog.schema.table>
+        outputs:
+          # The raw data is written to this staging table for downstream steps.
+          # The table name is auto-derived from MODEL_CATALOG_SCHEMA and dataset_keyword.
+          # You can change the suffix (e.g., _raw_data) if your naming convention differs.
+          file:
+            data:
+            pipeline:
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"

@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from loguru import logger
+
+
+class ServingPromoter:
+    """
+    Promotes a deployed model endpoint from challenger to champion.
+    Reads serving_metadata.json written by ServingDeployer/deploy_serving.py, then:
+      - For canary/blue_green: flips endpoint traffic to 100% challenger, removes champion entity
+      - For direct: endpoint is already at 100% (no traffic change needed)
+    Then sets @champion alias and removes @challenger alias.
+    metadata_path is injected by promote_serving.py at runtime; do not set it in the YAML.
+    """
+
+    def __init__(self, spark, func_conf: dict):
+        self.spark = spark
+        kwargs = func_conf["kwargs"]
+        self.model_name: str = kwargs["model_name"]
+        self.metadata_path: str = kwargs["metadata_path"]
+
+    def run(self, job_run_id: str) -> dict:
+        metadata = self._read_metadata()
+
+        if metadata.get("promoted"):
+            logger.info(
+                f"[{self.model_name}] Already promoted (promoted=true in metadata), skipping."
+            )
+            return {
+                "endpoint_name": metadata.get("endpoint_name", ""),
+                "strategy": metadata.get("strategy", ""),
+                "promoted_version": metadata.get("challenger_version", ""),
+                "model_registry_name": metadata.get("model_registry_name", ""),
+                "promoted": True,
+                "skipped": True,
+            }
+
+        model_registry_name = metadata["model_registry_name"]
+        endpoint_name = metadata["endpoint_name"]
+        strategy = metadata["strategy"]
+        challenger_ver = metadata["challenger_version"]
+        challenger_served_name = metadata["challenger_served_name"]
+        workload_size = metadata.get("workload_size", "Small")
+        scale_to_zero = metadata.get("scale_to_zero", True)
+
+        from databricks.sdk import WorkspaceClient
+        from databricks.sdk.service.serving import Route, TrafficConfig
+        from mlflow.tracking import MlflowClient
+
+        mlflow_client = MlflowClient()
+        w = WorkspaceClient()
+
+        # For canary/blue_green: flip endpoint to 100% challenger, drop champion entity
+        if strategy in ("canary", "blue_green"):
+            w.serving_endpoints.update_config(
+                name=endpoint_name,
+                served_entities=[
+                    self._make_entity(
+                        challenger_served_name,
+                        challenger_ver,
+                        model_registry_name,
+                        workload_size,
+                        scale_to_zero,
+                    )
+                ],
+                traffic_config=TrafficConfig(
+                    routes=[
+                        Route(
+                            served_model_name=challenger_served_name,
+                            traffic_percentage=100,
+                        )
+                    ]
+                ),
+            )
+            logger.info(
+                f"[{self.model_name}] Endpoint updated: {challenger_served_name} @ 100%"
+            )
+
+        # Promote aliases
+        mlflow_client.set_registered_model_alias(
+            model_registry_name, "champion", challenger_ver
+        )
+        try:
+            mlflow_client.delete_registered_model_alias(
+                model_registry_name, "challenger"
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                f"[{self.model_name}] Failed to delete @challenger alias for {model_registry_name}"
+            )
+        logger.info(
+            f"[{self.model_name}] Promoted v{challenger_ver} to @champion, removed @challenger"
+        )
+
+        # Update metadata to reflect promotion
+        metadata["promoted"] = True
+        metadata["promoted_at"] = str(datetime.now(tz=timezone.utc))
+        metadata["promotion_job_run_id"] = job_run_id
+        self._write_metadata(metadata)
+
+        return {
+            "endpoint_name": endpoint_name,
+            "strategy": strategy,
+            "promoted_version": challenger_ver,
+            "model_registry_name": model_registry_name,
+            "promoted": True,
+            "skipped": False,
+        }
+
+    def _read_metadata(self) -> dict:
+        path = Path(self.metadata_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"serving_metadata.json not found at {self.metadata_path}. "
+                "Run the serving pipeline first."
+            )
+        with open(path) as f:
+            return json.load(f)
+
+    def _write_metadata(self, metadata: dict) -> None:
+        path = Path(self.metadata_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(metadata, f, indent=2)
+        logger.info(f"Metadata updated at: {path}")
+
+    def _make_entity(
+        self,
+        name: str,
+        version: str,
+        model_registry_name: str,
+        workload_size: str,
+        scale_to_zero: bool,
+    ):
+        from databricks.sdk.service.serving import ServedEntityInput
+
+        return ServedEntityInput(
+            entity_name=model_registry_name,
+            entity_version=str(version),
+            name=name,
+            workload_size=workload_size,
+            scale_to_zero_enabled=scale_to_zero,
+        )

@@ -1,0 +1,42 @@
+# =============================================================================
+# PREPROCESSING CONFIG — retraining pipeline
+# =============================================================================
+# Identical purpose to training/preprocess.yml — applies the same preprocessing
+# logic to the retraining data.
+#
+# TODO: Replace <data_science_module_file_path> with the same preprocessing
+#       class used in training/preprocess.yml.
+#       Format: <package>.<module>.<submodule>:<ClassName>
+#       Example: {{ ds_project }}.preprocessing.pipeline:DataPreprocessor
+# =============================================================================
+
+version: '1.0'
+stage: retraining
+file: preprocess.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: {{ dataset_keyword }}_preprocessing
+    enable: true
+    functions:
+      # TODO: Replace with the DS project's preprocessing class path.
+      # Must be the same class used in training/preprocess.yml.
+      class_path: <data_science_module_file_path>
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_preprocess
+        source_data_type: databricks_table
+        target_data_type: file
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            data:
+            pipeline:
+          # Reads from the retraining staging table written by retraining/data.yml.
+          databricks_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_raw_data"
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            # Cleaned CSV consumed by retraining/featurization.yml.
+            data: /data/preprocessing/{{ dataset_keyword }}.csv
+            pipeline:
+          databricks_table:

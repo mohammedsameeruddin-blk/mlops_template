@@ -1,0 +1,128 @@
+# =============================================================================
+# USAGE
+# =============================================================================
+# This file contains environment-specific runtime configuration for the
+# {{ project }} MLOps project. Every empty string ("") must be filled in
+# before deploying. A missing value will cause a runtime error when the
+# pipeline tries to create tables or log to MLflow.
+#
+# Loaded at runtime via:
+#   from {{ project }}.common.utils.config_utils import load_project_config
+#   env = load_project_config("{{ project }}", runtime_env)   # runtime_env = dev|qa|prod
+
+# -----------------------------------------------------------------------------
+# HOW TO LOAD IN PYTHON (manual)
+# -----------------------------------------------------------------------------
+#   import toml
+#   env_name = "dev"
+#   config = toml.load("config.toml")
+#   env = config[env_name]
+#   print(env["MODEL_CATALOG_SCHEMA"])
+
+# -----------------------------------------------------------------------------
+# BEST PRACTICE
+# -----------------------------------------------------------------------------
+#   - All three environments (dev, qa, prod) must define the same set of keys.
+#   - Use separate Unity Catalog schemas per environment to isolate data.
+#   - Never commit real webhook URLs or tokens to version control;
+#     use Databricks Secrets and inject them at runtime if possible.
+
+# =============================================================================
+# ENVIRONMENTS
+# =============================================================================
+
+[dev]
+# Auto-filled by Copier from the dev_host prompt. Do not change.
+WORKSPACE_URL = "{{ dev_host }}"
+
+# Root path in Databricks Volumes where pipeline output files are written.
+# Format: /Volumes/<catalog>/<schema>/<volume_name>
+# Example: /Volumes/main/default/mlops_volumes
+# TODO: Set this to your dev Volumes path.
+VOLUMES_ROOT_PATH = ""
+
+# Unity Catalog catalog name where the audit table will be created.
+# The audit table tracks every pipeline action (start time, duration, status, errors).
+# Example: "main" or "mlops_catalog"
+# TODO: Set to the catalog you want the audit table written to.
+AUDIT_TARGET_CATALOG = ""
+
+# Schema inside AUDIT_TARGET_CATALOG for the audit table.
+# "default" is a safe starting point; change if your org uses a different convention.
+AUDIT_TARGET_SCHEMA = "default"
+
+# Audit table name. The default name is unique per project so it is usually safe to leave as-is.
+AUDIT_TARGET_TABLE = "mlops_{{project}}_audit_tbl"
+
+# Unity Catalog catalog where MLflow models, feature tables, and prediction tables are stored.
+# Example: "main" or "ml_catalog"
+# TODO: Set to the catalog your Data Science team uses for model artifacts.
+MODEL_CATALOG = ""
+
+# Schema inside MODEL_CATALOG for this project's assets.
+# Example: "{{ project }}_dev"
+# TODO: Set to the schema for this project.
+MODEL_SCHEMA = ""
+
+# Convenience shorthand used throughout the pipeline configs: "<MODEL_CATALOG>.<MODEL_SCHEMA>"
+# Example: "main.{{ project }}_dev"
+# TODO: Set to "<MODEL_CATALOG>.<MODEL_SCHEMA>" — must match the two values above.
+MODEL_CATALOG_SCHEMA = ""
+
+# Google Chat incoming webhook URL for pipeline success and failure notifications.
+# Create one at: Google Chat → Space → Apps & Integrations → Add Webhooks
+# Example: "https://chat.googleapis.com/v1/spaces/XXXX/messages?key=...&token=..."
+# TODO: Set to your team's Google Chat webhook. Leave empty to disable notifications.
+WEBHOOK_URL = ""
+
+
+[qa]
+# Auto-filled by Copier. Do not change.
+WORKSPACE_URL = "{{ qa_host }}"
+
+# TODO: Set to your QA Volumes path (may be the same workspace as dev).
+VOLUMES_ROOT_PATH = ""
+
+# TODO: Set to the QA catalog for the audit table.
+AUDIT_TARGET_CATALOG = ""
+
+AUDIT_TARGET_SCHEMA = "default"
+AUDIT_TARGET_TABLE = "mlops_{{project}}_audit_tbl"
+
+# TODO: Set to the QA catalog for model artifacts.
+MODEL_CATALOG = ""
+
+# TODO: Set to the QA schema, e.g. "{{ project }}_qa"
+MODEL_SCHEMA = ""
+
+# TODO: "<MODEL_CATALOG>.<MODEL_SCHEMA>" for QA.
+MODEL_CATALOG_SCHEMA = ""
+
+# TODO: Set to your QA notification webhook (can be the same channel as dev).
+WEBHOOK_URL = ""
+
+
+[prod]
+# Auto-filled by Copier. Do not change.
+WORKSPACE_URL = "{{ prod_host }}"
+
+# TODO: Set to your production Volumes path.
+VOLUMES_ROOT_PATH = ""
+
+# TODO: Set to the production catalog for the audit table.
+AUDIT_TARGET_CATALOG = ""
+
+AUDIT_TARGET_SCHEMA = "default"
+AUDIT_TARGET_TABLE = "mlops_{{project}}_audit_tbl"
+
+# TODO: Set to the production catalog for model artifacts.
+MODEL_CATALOG = ""
+
+# TODO: Set to the production schema, e.g. "{{ project }}_prod"
+MODEL_SCHEMA = ""
+
+# TODO: "<MODEL_CATALOG>.<MODEL_SCHEMA>" for production.
+MODEL_CATALOG_SCHEMA = ""
+
+# TODO: Set to your production notification webhook.
+WEBHOOK_URL = ""

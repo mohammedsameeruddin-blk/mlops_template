@@ -1,0 +1,103 @@
+import argparse
+import importlib
+from datetime import datetime, timezone
+
+import mlflow
+from databricks.sdk import WorkspaceClient
+from loguru import logger
+from pyspark.sql import SparkSession
+
+try:
+    from pyspark.dbutils import DBUtils  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover
+    DBUtils = None
+
+from {{ project }}.common.utils.config_utils import (
+    load_project_config,
+    load_task_config,
+)
+
+
+def load_class(class_path: str):
+    module_path, class_name = class_path.split(":")
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
+
+
+def set_mlflow_experiment(root_path, stage_name, experiment_name):
+    experiment_name = f"{root_path}/{stage_name}/experiments/{experiment_name}"
+    experiment_folder = f"{root_path}/{stage_name}/experiments"
+
+    w = WorkspaceClient()
+    w.workspace.mkdirs(path=experiment_folder)
+
+    experiment = mlflow.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        experiment_id = mlflow.create_experiment(experiment_name)
+        logger.info(
+            f"Created MLflow experiment '{experiment_name}' (ID={experiment_id})"
+        )
+    else:
+        experiment_id = experiment.experiment_id
+        logger.info(
+            f"Found existing MLflow experiment: {experiment_name} (ID={experiment_id})"
+        )
+
+    return experiment_id
+
+
+def main(spark):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--root_path", required=True)
+    parser.add_argument("--runtime_env", required=True)
+    parser.add_argument("--yml_task", required=True)
+    parser.add_argument("--project_name", required=True)
+    parser.add_argument("--model_name", required=True)
+    parser.add_argument("--stage_name", required=True)
+    parser.add_argument("--task_key", required=True)
+    parser.add_argument("--task_run_id", required=True)
+    parser.add_argument("--job_name", required=True)
+    parser.add_argument("--job_id", required=True)
+    parser.add_argument("--job_run_id", required=True)
+
+    args = parser.parse_args()
+    root_path = args.root_path
+    runtime_env = args.runtime_env.lower()
+    yml_task = args.yml_task
+    project_name = args.project_name
+    model_name = args.model_name
+    stage_name = args.stage_name
+
+    # load config from TOML based on runtime_env
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
+    if not env_context:
+        raise ValueError(f"Environment '{runtime_env}' not found in config.toml")
+
+    # load and render task YAML
+    task_config = load_task_config(
+        project_name=project_name,
+        model_name=model_name,
+        stage_name=stage_name,
+        env_context=env_context,
+        which_file=yml_task,
+    )
+
+    formatted_string = datetime.now(tz=timezone.utc).strftime("%Y_%m_%d_%H_%M_%S")
+    experiment_name = f"MLOps_{task_config['mlflow_experiment_name']}_{stage_name}_{runtime_env}_{formatted_string}"
+
+    # Create or set MLflow experiment
+    experiment_id = set_mlflow_experiment(
+        root_path=root_path, stage_name=stage_name, experiment_name=experiment_name
+    )
+
+    return experiment_id
+
+
+if __name__ == "__main__":
+    spark = SparkSession.builder.getOrCreate()
+    dbutils = DBUtils(spark) if DBUtils is not None else None
+
+    experiment_id = main(spark=spark)
+    if dbutils is not None:
+        dbutils.jobs.taskValues.set(key="experiment_id", value=experiment_id)

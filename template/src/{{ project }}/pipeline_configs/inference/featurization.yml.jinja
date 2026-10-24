@@ -1,0 +1,57 @@
+# =============================================================================
+# FEATURIZATION CONFIG — inference pipeline (transform only)
+# =============================================================================
+# IMPORTANT: This is the INFERENCE-path featurization — it applies an already
+# fitted pipeline (no fitting). The training-time pipeline artifact is
+# downloaded automatically from MLflow by data_inference_featurization.py.
+#
+# TODO: Replace <data_science_module_file_path> with the dotted Python path
+#       of the DS featurization class. This must be the same class used in
+#       training/featurization.yml, as it will be called with transform()
+#       instead of fit(). Format:
+#           <package>.<module>.<submodule>:<ClassName>
+#       Example:
+#           {{ ds_project }}.featurization.pipeline:FeaturePipeline
+#
+# TODO: Replace "{{ dataset_keyword }}_id" with the actual primary key column.
+#       Must match what is defined in training/featurization.yml.
+# =============================================================================
+
+version: '1.0'
+stage: inference
+file: featurization.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: {{ dataset_keyword }}_featurization
+    enable: true
+    functions:
+      # TODO: Replace with the DS project's featurization class path (same as training).
+      # The script calls .transform() instead of .fit() — no class_path change needed.
+      class_path:
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ dataset_keyword }}_features
+        source_data_type: file
+        target_data_type: file
+        # Used to look up the training experiment and download the pipeline artifact.
+        experiment_details: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.experiment_tracking"
+        inputs:
+          # currently supports file/databricks_table
+          file:
+            # Incoming preprocessed data — produced by the inference preprocess step.
+            data: /data/preprocessing/{{ dataset_keyword }}_incoming.csv
+            # The pipeline .pkl filename is matched by artifact_role tag from MLflow.
+            # Value here must match the filename used at training time.
+            pipeline: {{ dataset_keyword }}_features.pkl
+          databricks_table:
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            # Transformed feature CSV fed into inference/prepare_input.yml.
+            data: /data/featurization/{{ dataset_keyword }}_incoming.csv
+            pipeline: /data/featurization/{{ dataset_keyword }}_features.pkl
+          databricks_table:
+            # Inference-time Feature Store table (separate from the training table).
+            feature_store: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
+            # TODO: Replace with the actual primary key column name.
+            primary_key: "{{ dataset_keyword }}_id"

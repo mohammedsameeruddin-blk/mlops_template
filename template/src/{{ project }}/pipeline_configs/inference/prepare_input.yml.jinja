@@ -1,0 +1,74 @@
+# =============================================================================
+# PREPARE INPUT CONFIG — inference pipeline
+# =============================================================================
+# This step merges one or more inference feature tables into a single input
+# CSV (merged_input.csv) that is passed to the batch scoring step.
+#
+# Data source — choose ONE mode and leave the other commented out:
+#
+#   databricks_table (default / recommended)
+#     Reads from the Databricks Feature Store at the pinned Delta version
+#     recorded during inference featurization (ensures point-in-time correctness).
+#
+#   file (alternative)
+#     Reads from the inference feature CSVs written to Volumes by
+#     inference/featurization.yml. Useful for local testing or when the
+#     Feature Store is not in use.
+#     Uncomment the file: block and comment out the databricks_table: block.
+#
+# TODO: Replace <merge_key> with the column name used to join feature tables.
+#       Must be present in every feature table/file.
+#       Example: transaction_id  or  customer_id
+#       Note: Only a single merge key is currently supported.
+# =============================================================================
+
+version: '1.0'
+stage: inference
+file: prepare_input.yml # same as current filename; do not change this
+audit_table: "{% raw %}{{ env.AUDIT_TARGET_CATALOG }}.{{ env.AUDIT_TARGET_SCHEMA }}.{{ env.AUDIT_TARGET_TABLE }}{% endraw %}"
+actions:
+  - name: prepare_input_data
+    enable: true
+    functions:
+      class_path: {{ project }}.common.data.data_splitter:DataOperations
+      kwargs:
+        project_name: {{ project }}
+        process_name: {{ model }}_data_preparation
+        # Set to file if reading from Volumes CSVs instead of Feature Store.
+        source_data_type: databricks_table
+        target_data_type: file
+        inputs:
+          # --- FILE MODE (alternative) ---
+          # Uncomment this block and comment out databricks_table below to read
+          # feature CSVs from Volumes instead of the Feature Store.
+          # file:
+          #   features:
+          #     # Add one entry per feature CSV if merging multiple sources.
+          #     {{ dataset_keyword }}_features:
+          #       data: /data/featurization/{{ dataset_keyword }}_incoming.csv
+          #   merge:
+          #     how: inner # inner | outer | left | right
+          #     merge_on: <merge_key>
+          file:
+            pipeline:
+          # --- DATABRICKS TABLE MODE (default) ---
+          # Reads from the inference Feature Store table written by featurization.yml.
+          databricks_table:
+            features:
+              # Add one entry per feature table if merging multiple sources.
+              {{ dataset_keyword }}:
+                # Must match the process_name used in inference/featurization.yml.
+                feature_run_name: {{ dataset_keyword }}_featurization
+                feature_table: "{% raw %}{{ env.MODEL_CATALOG_SCHEMA }}{% endraw %}.{{ dataset_keyword }}_incoming_features"
+            merge:
+              how: inner # inner | outer | left | right
+              # TODO: Replace with the column name to join on (e.g., transaction_id).
+              # Currently only a single merge key is supported.
+              merge_on: <merge_key>
+        outputs:
+          # currently supports file/databricks_table
+          file:
+            # Merged input CSV — read by inference/{{ model }}/inference.yml.
+            data: /data/input_preparation/merged_input.csv
+            pipeline:
+          databricks_table:
