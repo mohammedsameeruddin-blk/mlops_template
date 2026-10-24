@@ -73,13 +73,11 @@ class BaseAction:
     """
 
     def __init__(self, config: dict, data=None, **kwargs):
-        self.config = config       # Full functions.kwargs dict from the YAML
-        self.data = data           # Input DataFrame (None for pure-action classes)
+        self.config = config  # Full functions.kwargs dict from the YAML
+        self.data = data  # Input DataFrame (None for pure-action classes)
 
     def run(self):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement run()"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} must implement run()")
 
 
 # =============================================================================
