@@ -90,10 +90,10 @@ _skip_if_exists:
   - pyproject.toml
 
 _tasks:
-  - git init
-  - git checkout -b main
-  - git add .
-  - git commit -m "chore: initial project scaffold from template"
+  - command: git init
+  - command: git checkout -b main
+  - command: git add .
+  - command: [git, commit, -m, "chore: initial project scaffold from template"]
 
 _message_after_copy: |
   Congratulations! Your project has been successfully created!
