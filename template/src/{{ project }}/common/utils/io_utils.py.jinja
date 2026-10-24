@@ -98,6 +98,16 @@ def cleanup_pipeline_setup(spark, func_conf):
     logger.warning("No volumes path provided.")
 
 
+def read_json_safe(file_path: str) -> dict:
+    """Read a JSON file, returning an empty dict if the file is missing or malformed."""
+    try:
+        with open(file_path, mode="r") as fp:
+            return json.load(fp)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Could not read `{file_path}`: {e}")
+        return {}
+
+
 def log_experiment_details(spark, experiment_id, model_name, stage_name, func_conf):
     # Get experiment name from id
     experiment = mlflow.get_experiment(experiment_id)

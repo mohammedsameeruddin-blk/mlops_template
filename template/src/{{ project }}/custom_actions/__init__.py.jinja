@@ -100,9 +100,9 @@ class BaseAction:
 #       source_data_type: databricks_table
 #       target_data_type: databricks_table
 #       inputs:
-#         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions"
+#         databricks_table: "<MODEL_CATALOG_SCHEMA>.{{ model }}_predictions"
 #       outputs:
-#         databricks_table: "{{ env.MODEL_CATALOG_SCHEMA }}.{{ model }}_predictions_filtered"
+#         databricks_table: "<MODEL_CATALOG_SCHEMA>.{{ model }}_predictions_filtered"
 #       confidence_threshold: 0.75
 #
 # class ApplyConfidenceThreshold(BaseAction):

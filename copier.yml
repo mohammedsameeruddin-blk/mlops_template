@@ -10,12 +10,20 @@ _envops:
   lstrip_blocks: true
 
 _repo: "https://github.com/mohammedsameeruddin-blk/mlops_template"
-_revision: feature/project_template
 
 _message_before_copy: |
   Thanks for using our MLOps template to bootstrap your new project.
 
-  Please, reply to the question carefully as the answers will be used to configure the scaffold of your project.
+  IMPORTANT - Naming convention:
+    Your project directory must be named  mlops_<project_name>
+    Run this command from your workspace:
+
+      copier copy <template_url> mlops_<project_name>
+
+    Example:
+      copier copy git@github.com:mohammedsameeruddin-blk/mlops_template.git mlops_store_sales
+
+  Please reply to the questions carefully as the answers will be used to configure the scaffold of your project.
 
 # MLOps project info
 project:
@@ -90,10 +98,44 @@ _skip_if_exists:
   - pyproject.toml
 
 _tasks:
-  - command: git init
-  - command: git checkout -b main
-  - command: git add .
-  - command: [git, commit, -m, "chore: initial project scaffold from template"]
+  - command:
+      - "{{ _copier_python }}"
+      - "-c"
+      - |
+        import pathlib, sys
+        cwd = pathlib.Path.cwd()
+        # During copier update, tasks run in a temp dir (copier._main.*) — skip validation there
+        if cwd.name.startswith('copier.') or not pathlib.Path('.copier-answers.yml').is_file():
+            sys.exit(0)
+        if not cwd.name.startswith('mlops_'):
+            print('\n' + '=' * 60)
+            print('ERROR: Project directory must be named with a "mlops_" prefix.')
+            print(f'  Current : {cwd.name}')
+            print(f'  Expected: mlops_{{ project }}')
+            print()
+            print('Delete this directory and re-run from your workspace:')
+            print()
+            print(f'  copier copy git@github.com:mohammedsameeruddin-blk/mlops_template.git mlops_{{ project }} --trust')
+            print('=' * 60 + '\n')
+            sys.exit(1)
 
 _message_after_copy: |
-  Congratulations! Your project has been successfully created!
+  Your project mlops_{{ project }} is ready!
+
+  Next steps:
+    1. Install dependencies:
+         uv sync
+
+    2. Initialize git (if this is a new project):
+         git init
+         git checkout -b main
+         git add .
+         git commit -m "chore: initial project scaffold from template"
+
+    3. To update this project when a new template version is released:
+         copier update --vcs-ref <version> --trust
+
+    4. If updating an existing project, review the changes and commit them:
+         git diff
+         git add .
+         git commit -m "chore: update project scaffold from template"
