@@ -131,4 +131,5 @@ mlops_<project_name>/
 
 | Version | Notes |
 |---|---|
+| `v1.1.0` | `train.py` refactored: `_RunContext` dataclass + extracted handler functions; DS package bundled with MLflow model via `code_paths` + filtered `pip_requirements` |
 | `v1.0.0` | Initial release — restructured template, naming validation, `copier update` support |
