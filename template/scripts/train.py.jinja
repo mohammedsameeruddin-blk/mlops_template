@@ -1,10 +1,15 @@
 import argparse
 import importlib
+import importlib.util as _ilu
 import json
 import os
+import subprocess as _subprocess
+import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import joblib
 import mlflow
@@ -29,10 +34,333 @@ from {{ project }}.common.utils.config_utils import (
 from {{ project }}.common.utils.notify_utils import send_gchat_failure
 
 
+@dataclass
+class _RunContext:
+    spark: Any
+    root_path: str
+    stage_name: str
+    model_name: str
+    experiment_id: str
+    base_output_dir: Path
+
+
 def load_class(class_path: str):
     module_path, class_name = class_path.split(":")
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
+
+
+def _handle_train_test_split(
+    ctx: _RunContext, cls, func_conf: dict, func_kwargs: dict
+) -> None:
+    target_type = func_kwargs.get("target_data_type")
+    target_info = func_kwargs["outputs"]["file"]
+    source_type = func_kwargs["source_data_type"]
+    data_ops = cls(
+        spark=ctx.spark,
+        func_conf=func_conf,
+        source_type=source_type,
+        root_path=ctx.root_path,
+        stage_name=ctx.stage_name,
+        experiment_id=ctx.experiment_id,
+    )
+    result = data_ops.split_data()
+    merged_df, train_df, test_df, feature_params = (
+        result["merged"],
+        result["train"],
+        result["test"],
+        result["params"],
+    )
+
+    if feature_params:
+        logger.debug(feature_params)
+        mlflow.log_param(key="features_info", value=json.dumps(feature_params))
+
+    if target_type == "file":
+        # TODO: output should always be csv, but we can extend this later
+        for key, df in [("merged", merged_df), ("train", train_df), ("test", test_df)]:
+            rel = target_info[key].lstrip("/")
+            out_dir = ctx.base_output_dir / "/".join(rel.split("/")[:-1])
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = ctx.base_output_dir / rel
+            logger.info(f"Writing {key} data output to {out_dir}")
+            mlflow.log_param(key=f"target_{key}_file_path", value=out_path)
+            df.to_csv(out_path, index=False)
+
+
+def _handle_hyperparameter_tuning(ctx: _RunContext, cls, func_kwargs: dict) -> None:
+    source_info = func_kwargs["inputs"]["file"]
+    train_data_path = ctx.base_output_dir / source_info["train"]["data"].lstrip("/")
+    train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
+
+    hyper_obj = cls(train_df=train_df)
+    tuning_results = hyper_obj.run()
+    for mname, result in tuning_results.items():
+        with mlflow.start_run(
+            run_name=f"{mname}_hyperopt",
+            experiment_id=ctx.experiment_id,
+            nested=True,
+        ):
+            mlflow.log_params(params=result["best_params"])
+            mlflow.log_metric(key="best_loss", value=result["best_loss"])
+
+            for idx, trial in enumerate(result["trials"], start=1):
+                with mlflow.start_run(
+                    run_name=f"{mname}_trial_{idx}",
+                    experiment_id=ctx.experiment_id,
+                    nested=True,
+                ):
+                    mlflow.log_params(params=trial["params"])
+                    mlflow.log_metrics(metrics=trial["metrics"])
+                    mlflow.log_metric(key="loss", value=trial["loss"])
+                    mlflow.set_tag(key="status", value=trial["status"])
+
+    tuning_results_path = (
+        ctx.base_output_dir / "models" / ctx.model_name / "hyperparameter_results.json"
+    )
+    tuning_results_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(tuning_results_path, "w") as f:
+        json.dump(tuning_results, f, indent=2)
+    mlflow.log_artifact(local_path=str(tuning_results_path))
+
+
+def _handle_model_evaluation(ctx: _RunContext, cls, func_kwargs: dict) -> None:
+    source_info = func_kwargs["inputs"]["file"]
+    train_data_path = ctx.base_output_dir / source_info["train"]["data"].lstrip("/")
+    train_df = pd.read_csv(filepath_or_buffer=train_data_path, sep=",")
+
+    # TODO: read from hyper results from experiment not from the bundle path
+    tuning_results_path = (
+        ctx.base_output_dir / "models" / ctx.model_name / "hyperparameter_results.json"
+    )
+    if not tuning_results_path.exists():
+        raise FileNotFoundError("Hyperparameter tuning results not found")
+
+    with open(tuning_results_path) as f:
+        tuning_results = json.load(f)
+
+    evaluator = cls(train_df=train_df, tuning_results=tuning_results)
+    evaluation_results = evaluator.run()
+    for mname, result in evaluation_results["models"].items():
+        with mlflow.start_run(
+            run_name=f"{mname}_evaluation",
+            experiment_id=ctx.experiment_id,
+            nested=True,
+        ):
+            mlflow.log_params(params=result["best_params"])
+            mlflow.log_metrics(metrics=result["mean_metrics"])
+
+            for fold in result["folds"]:
+                with mlflow.start_run(
+                    run_name=f"{mname}_fold_{fold['fold']}",
+                    experiment_id=ctx.experiment_id,
+                    nested=True,
+                ):
+                    fold_metrics = {k: v for k, v in fold.items() if k != "fold"}
+                    mlflow.log_metrics(metrics=fold_metrics)
+
+    mlflow.log_param(key="best_model", value=evaluation_results["best_model"])
+    mlflow.log_param(
+        key="selection_metric", value=evaluation_results["selection_metric"]
+    )
+    mlflow.log_param(key="selection_value", value=evaluation_results["selection_value"])
+    mlflow.set_tag(key="status", value="success")
+
+    best_model_name = evaluation_results["best_model"]
+    best_model_params = {
+        best_model_name: evaluation_results["models"][best_model_name]["best_params"]
+    }
+    best_model_params_path = (
+        ctx.base_output_dir / "models" / ctx.model_name / "best_model_params.json"
+    )
+    best_model_params_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(best_model_params_path, "w") as f:
+        json.dump(best_model_params, f, indent=2)
+    mlflow.log_artifact(local_path=str(best_model_params_path))
+
+
+def _handle_model_training(
+    ctx: _RunContext, cls, func_conf: dict, func_kwargs: dict
+) -> str:
+    source_info = func_kwargs["inputs"]["file"]
+    train_df = pd.read_csv(
+        filepath_or_buffer=ctx.base_output_dir
+        / source_info["train"]["data"].lstrip("/"),
+        sep=",",
+    )
+    test_df = pd.read_csv(
+        filepath_or_buffer=ctx.base_output_dir
+        / source_info["test"]["data"].lstrip("/"),
+        sep=",",
+    )
+
+    # TODO: read from best_model_params results from experiment not from the bundle path
+    if ctx.stage_name == "retraining":
+        best_model_params_path = (
+            Path(ctx.root_path)
+            / "training"
+            / "models"
+            / ctx.model_name
+            / "best_model_params.json"
+        )
+    else:
+        best_model_params_path = (
+            ctx.base_output_dir / "models" / ctx.model_name / "best_model_params.json"
+        )
+    if not best_model_params_path.exists():
+        raise FileNotFoundError("Best model results not found")
+
+    with open(best_model_params_path) as f:
+        best_model_params = json.load(f)
+
+    best_model_name = next(iter(best_model_params.keys()))
+    best_params = best_model_params[best_model_name]
+    trainer = cls(
+        train_df=train_df,
+        test_df=test_df,
+        model_name=best_model_name,
+        best_params=best_params,
+    )
+    model_results = trainer.run()
+
+    with mlflow.start_run(
+        run_name="train_metrics", experiment_id=ctx.experiment_id, nested=True
+    ):
+        mlflow.log_metrics(model_results["metrics"]["train"])
+
+    with mlflow.start_run(
+        run_name="test_metrics", experiment_id=ctx.experiment_id, nested=True
+    ):
+        mlflow.log_metrics(model_results["metrics"]["test"])
+
+    artifacts_dir = ctx.base_output_dir / "models" / ctx.model_name / "model_artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    params_path = artifacts_dir / "best_model_params.json"
+    with open(params_path, "w") as f:
+        json.dump(best_model_params, f, indent=2)
+    mlflow.log_artifact(local_path=str(params_path))
+
+    X_sample = model_results["input_example"]
+    y_sample = model_results["model"].predict(X_sample)
+    signature = infer_signature(model_input=X_sample, model_output=y_sample)
+
+    # Dynamically discover what types are in the model
+    with tempfile.NamedTemporaryFile(suffix=".skops", delete=False) as tmp:
+        tmp_path = tmp.name
+    sio.dump(model_results["model"], tmp_path)
+    trusted_types = sio.get_untrusted_types(file=tmp_path)
+    os.unlink(tmp_path)
+
+    # Bundle the DS package source with the model so the serving container
+    # does not need to pip-install it from PyPI (it is a private package).
+    _spec = _ilu.find_spec("{{ ds_project }}")
+    if _spec and _spec.submodule_search_locations:
+        _code_paths = [str(Path(next(iter(_spec.submodule_search_locations))))]
+    else:
+        logger.warning("{{ ds_project }} not installed; code_paths will be empty.")
+        _code_paths = []
+
+    # Use pip list --local to get only the job env packages (avoids duplicates
+    # when the cluster base env and job env expose different package versions).
+    _freeze = _subprocess.run(
+        [sys.executable, "-m", "pip", "list", "--format=freeze", "--local"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    _PRIVATE_PKGS = {
+        "{{ ds_project | replace('_', '-') }}",
+        "{{ project | replace('_', '-') }}",
+        "ds-cli",
+        "mlops-cli",
+    }
+    _pip_reqs = [
+        r
+        for r in _freeze.stdout.splitlines()
+        if r
+        and "==" in r
+        and r.lower().split("==")[0].replace("_", "-") not in _PRIVATE_PKGS
+    ]
+
+    model_info = mlflow.sklearn.log_model(
+        sk_model=model_results["model"],
+        artifact_path="model",
+        signature=signature,
+        input_example=X_sample,
+        skops_trusted_types=trusted_types,
+        code_paths=_code_paths,
+        pip_requirements=_pip_reqs,
+    )
+    model_reg_info = mlflow.register_model(
+        model_uri=model_info.model_uri,
+        name=func_kwargs["model_registry_name"],
+    )
+    model_registered_version = model_reg_info.version
+    logger.info(
+        f"Registered model: {model_reg_info.name} with version: {model_registered_version}"
+    )
+    MlflowClient().set_registered_model_alias(
+        name=func_kwargs["model_registry_name"],
+        alias="challenger",
+        version=model_registered_version,
+    )
+    logger.info(
+        f"Set @challenger alias on {model_reg_info.name} v{model_registered_version}"
+    )
+
+    scaler_path = artifacts_dir / "scaler.pkl"
+    joblib.dump(model_results["scaler"], scaler_path)
+    mlflow.log_artifact(local_path=scaler_path, artifact_path="model/scaler")
+    mlflow.log_param(key="scalar", value=scaler_path)
+
+    features_base_path = ctx.base_output_dir / "data" / "featurization"
+    feature_files = sorted(features_base_path.rglob("*_features.pkl"))
+
+    if feature_files:
+        feature_files_relative = [
+            str(path.relative_to(ctx.base_output_dir)) for path in feature_files
+        ]
+        logger.info(
+            f"Found feature files in {features_base_path}: {feature_files_relative}"
+        )
+        features_metadata = {
+            feature_file.stem.replace("_features", ""): feature_file.relative_to(
+                ctx.base_output_dir
+            ).as_posix()
+            for feature_file in feature_files
+        }
+        mlflow.log_param(key="feature_pipelines", value=json.dumps(features_metadata))
+        for feature_file in feature_files:
+            mlflow.log_artifact(
+                local_path=str(feature_file), artifact_path="model/featurization/"
+            )
+    else:
+        logger.warning(f"No *_features.pkl files found in {features_base_path}")
+
+    if func_kwargs.get("include_model_explainability", False):
+        logger.info("Generating model explainability plots...")
+        model_explain(
+            model=model_results["model"],
+            train_data=model_results["X_train"],
+            test_data=model_results["X_test"],
+            file_name=str(artifacts_dir / "feature_importance.png"),
+            file_name1=str(artifacts_dir / "global_feature_importance.png"),
+            file_name2=str(artifacts_dir / "local_feature_importance.png"),
+            file_name3=str(artifacts_dir / "individual_explainability.png"),
+        )
+        for plot_file in [
+            "feature_importance.png",
+            "global_feature_importance.png",
+            "local_feature_importance.png",
+            "individual_explainability.png",
+        ]:
+            mlflow.log_artifact(
+                local_path=artifacts_dir / plot_file,
+                artifact_path="model/explainability/",
+            )
+
+    return model_registered_version
 
 
 def main(spark):
@@ -65,10 +393,7 @@ def main(spark):
     job_run_id = args.job_run_id
     experiment_id = args.experiment_id
 
-    env_context = load_project_config(
-        project_name=project_name,
-        env_name=runtime_env,
-    )
+    env_context = load_project_config(project_name=project_name, env_name=runtime_env)
 
     task_config = load_task_config(
         project_name=project_name,
@@ -111,8 +436,15 @@ def main(spark):
             run_url = f"{workspace_url}/#job/{job_id}/run/{job_run_id}"
             env_name_notify = runtime_env.upper()
 
-            base_output_dir = os.path.join(root_path, stage_name)
-            base_output_dir = Path(base_output_dir)
+            base_output_dir = Path(os.path.join(root_path, stage_name))
+            ctx = _RunContext(
+                spark=spark,
+                root_path=root_path,
+                stage_name=stage_name,
+                model_name=model_name,
+                experiment_id=experiment_id,
+                base_output_dir=base_output_dir,
+            )
 
             with mlflow.start_run(
                 run_name=action_name, experiment_id=experiment_id, nested=True
@@ -122,431 +454,22 @@ def main(spark):
 
                     if action_name == "train_test_split":
                         model_registered_version = None
-                        target_type = func_kwargs.get("target_data_type")
-                        target_info = func_kwargs["outputs"]["file"]
-                        source_type = func_kwargs["source_data_type"]
-                        data_ops = cls(
-                            spark=spark,
-                            func_conf=func_conf,
-                            source_type=source_type,
-                            root_path=root_path,
-                            stage_name=stage_name,
-                            experiment_id=experiment_id,
-                        )
-                        result = data_ops.split_data()
-                        merged_df, train_df, test_df, feature_params = (
-                            result["merged"],
-                            result["train"],
-                            result["test"],
-                            result["params"],
-                        )
+                        _handle_train_test_split(ctx, cls, func_conf, func_kwargs)
 
-                        if feature_params:
-                            logger.debug(feature_params)
-                            mlflow.log_param(
-                                key="features_info", value=json.dumps(feature_params)
-                            )
-
-                        if target_type == "file":
-                            # TODO: output should always be csv, but we can extend this later
-                            merged_output_dir = "/".join(
-                                target_info["merged"].split("/")[:-1]
-                            ).lstrip("/")
-                            merged_output_path = base_output_dir / merged_output_dir
-                            merged_output_path.mkdir(parents=True, exist_ok=True)
-                            merged_data_path = base_output_dir / target_info[
-                                "merged"
-                            ].lstrip("/")
-                            logger.info(
-                                f"Writing merged data output to {merged_output_path}"
-                            )
-                            mlflow.log_param(
-                                key="target_merged_file_path", value=merged_data_path
-                            )
-                            merged_df.to_csv(merged_data_path, index=False)
-
-                            train_output_dir = "/".join(
-                                target_info["train"].split("/")[:-1]
-                            ).lstrip("/")
-                            train_output_path = base_output_dir / train_output_dir
-                            train_output_path.mkdir(parents=True, exist_ok=True)
-                            train_data_path = base_output_dir / target_info[
-                                "train"
-                            ].lstrip("/")
-                            logger.info(
-                                f"Writing train data output to {train_output_path}"
-                            )
-                            mlflow.log_param(
-                                key="target_train_file_path", value=train_data_path
-                            )
-                            train_df.to_csv(train_data_path, index=False)
-
-                            test_output_dir = "/".join(
-                                target_info["test"].split("/")[:-1]
-                            ).lstrip("/")
-                            test_output_path = base_output_dir / test_output_dir
-                            test_output_path.mkdir(parents=True, exist_ok=True)
-                            test_data_path = base_output_dir / target_info[
-                                "test"
-                            ].lstrip("/")
-                            logger.info(
-                                f"Writing test data output to {test_output_path}"
-                            )
-                            mlflow.log_param(
-                                key="target_test_file_path", value=test_data_path
-                            )
-                            test_df.to_csv(test_data_path, index=False)
-
-                    if action_name == "hyperparameter_tuning":
+                    elif action_name == "hyperparameter_tuning":
                         model_registered_version = None
-                        source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = base_output_dir / source_info["train"][
-                            "data"
-                        ].lstrip("/")
-                        train_df = pd.read_csv(
-                            filepath_or_buffer=train_data_path, sep=","
-                        )
+                        _handle_hyperparameter_tuning(ctx, cls, func_kwargs)
 
-                        hyper_obj = cls(train_df=train_df)
-                        tuning_results = hyper_obj.run()
-                        for mname, result in tuning_results.items():
-                            with mlflow.start_run(
-                                run_name=f"{mname}_hyperopt",
-                                experiment_id=experiment_id,
-                                nested=True,
-                            ):
-                                # Best params of the model after all the trials
-                                mlflow.log_params(params=result["best_params"])
-                                mlflow.log_metric(
-                                    key="best_loss", value=result["best_loss"]
-                                )
-
-                                # Log the trial-based metrics and params
-                                for idx, trial in enumerate(result["trials"], start=1):
-                                    with mlflow.start_run(
-                                        run_name=f"{mname}_trial_{idx}",
-                                        experiment_id=experiment_id,
-                                        nested=True,
-                                    ):
-                                        mlflow.log_params(params=trial["params"])
-                                        mlflow.log_metrics(metrics=trial["metrics"])
-                                        mlflow.log_metric(
-                                            key="loss", value=trial["loss"]
-                                        )
-                                        mlflow.set_tag(
-                                            key="status", value=trial["status"]
-                                        )
-
-                        tuning_results_path = (
-                            base_output_dir
-                            / "models"
-                            / model_name
-                            / "hyperparameter_results.json"
-                        )
-                        tuning_results_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(tuning_results_path, "w") as f:
-                            json.dump(tuning_results, f, indent=2)
-                        mlflow.log_artifact(local_path=str(tuning_results_path))
-
-                    if action_name == "model_evaluation":
+                    elif action_name == "model_evaluation":
                         model_registered_version = None
-                        source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = base_output_dir / source_info["train"][
-                            "data"
-                        ].lstrip("/")
-                        train_df = pd.read_csv(
-                            filepath_or_buffer=train_data_path, sep=","
-                        )
-                        # TODO: read from hyper results from experiment not from the bundle path
-                        tuning_results_path = (
-                            base_output_dir
-                            / "models"
-                            / model_name
-                            / "hyperparameter_results.json"
-                        )
-                        if not tuning_results_path.exists():
-                            raise FileNotFoundError(
-                                "Hyperparameter tuning results not found"
-                            )
+                        _handle_model_evaluation(ctx, cls, func_kwargs)
 
-                        with open(tuning_results_path) as f:
-                            tuning_results = json.load(f)
-
-                        evaluator = cls(
-                            train_df=train_df, tuning_results=tuning_results
-                        )
-                        evaluation_results = evaluator.run()
-                        for mname, result in evaluation_results["models"].items():
-                            with mlflow.start_run(
-                                run_name=f"{mname}_evaluation",
-                                experiment_id=experiment_id,
-                                nested=True,
-                            ):
-                                # Best params of the model after all the trials
-                                mlflow.log_params(params=result["best_params"])
-                                mlflow.log_metrics(metrics=result["mean_metrics"])
-
-                                mproblem_type = result["model_type"]
-
-                                # Log the trial-based metrics and params
-                                for fold in result["folds"]:
-                                    with mlflow.start_run(
-                                        run_name=f"{mname}_fold_{fold['fold']}",
-                                        experiment_id=experiment_id,
-                                        nested=True,
-                                    ):
-                                        if mproblem_type == "Classification":
-                                            mlflow.log_metrics(
-                                                metrics={
-                                                    "accuracy": fold["accuracy"],
-                                                    "precision": fold["precision"],
-                                                    "recall": fold["recall"],
-                                                    "roc_auc": fold["roc_auc"],
-                                                }
-                                            )
-                                        else:
-                                            mlflow.log_metrics(
-                                                metrics={
-                                                    "mae": fold["mae"],
-                                                    "r2": fold["r2"],
-                                                    "mse": fold["mse"],
-                                                    "mape": fold["mape"],
-                                                }
-                                            )
-
-                        mlflow.log_param(
-                            key="best_model", value=evaluation_results["best_model"]
-                        )
-                        mlflow.log_param(
-                            key="selection_metric",
-                            value=evaluation_results["selection_metric"],
-                        )
-                        mlflow.log_param(
-                            key="selection_value",
-                            value=evaluation_results["selection_value"],
-                        )
-                        mlflow.set_tag(key="status", value="success")
-
-                        # log best_model_params artifact
-                        best_model_name = evaluation_results["best_model"]
-                        best_model_params = {
-                            best_model_name: evaluation_results["models"][
-                                best_model_name
-                            ]["best_params"]
-                        }
-                        best_model_params_path = (
-                            base_output_dir
-                            / "models"
-                            / model_name
-                            / "best_model_params.json"
-                        )
-                        best_model_params_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(best_model_params_path, "w") as f:
-                            json.dump(best_model_params, f, indent=2)
-                        mlflow.log_artifact(local_path=str(best_model_params_path))
-
-                    if action_name == "model_training":
-                        source_info = func_kwargs["inputs"]["file"]
-                        train_data_path = base_output_dir / source_info["train"][
-                            "data"
-                        ].lstrip("/")
-                        test_data_path = base_output_dir / source_info["test"][
-                            "data"
-                        ].lstrip("/")
-                        train_df = pd.read_csv(
-                            filepath_or_buffer=train_data_path, sep=","
-                        )
-                        test_df = pd.read_csv(
-                            filepath_or_buffer=test_data_path, sep=","
-                        )
-                        # TODO: read from best_model_params results from experiment not from the bundle path
-                        if stage_name == "retraining":
-                            base_output_dir_train = os.path.join(
-                                root_path, "training", "models", model_name
-                            )
-                            base_output_dir_train = Path(base_output_dir_train)
-
-                        if stage_name == "retraining":
-                            best_model_params_path = (
-                                base_output_dir_train / "best_model_params.json"
-                            )
-                        else:
-                            best_model_params_path = (
-                                base_output_dir
-                                / "models"
-                                / model_name
-                                / "best_model_params.json"
-                            )
-                        if not best_model_params_path.exists():
-                            raise FileNotFoundError("Best model results not found")
-
-                        with open(best_model_params_path) as f:
-                            best_model_params = json.load(f)
-
-                        best_model_name = next(iter(best_model_params.keys()))
-                        best_params = best_model_params[best_model_name]
-                        trainer = cls(
-                            train_df=train_df,
-                            test_df=test_df,
-                            model_name=best_model_name,
-                            best_params=best_params,
-                        )
-                        model_results = trainer.run()
-
-                        # Train metrics
-                        with mlflow.start_run(
-                            run_name="train_metrics",
-                            experiment_id=experiment_id,
-                            nested=True,
-                        ):
-                            mlflow.log_metrics(model_results["metrics"]["train"])
-
-                        # Test metrics
-                        with mlflow.start_run(
-                            run_name="test_metrics",
-                            experiment_id=experiment_id,
-                            nested=True,
-                        ):
-                            mlflow.log_metrics(model_results["metrics"]["test"])
-
-                        artifacts_dir = (
-                            base_output_dir / "models" / model_name / "model_artifacts"
-                        )
-                        artifacts_dir.mkdir(parents=True, exist_ok=True)
-                        # Log best params
-                        params_path = artifacts_dir / "best_model_params.json"
-                        with open(params_path, "w") as f:
-                            json.dump(best_model_params, f, indent=2)
-                        mlflow.log_artifact(local_path=str(params_path))
-                        # Log and register best model
-                        X_sample = model_results["input_example"]
-                        if model_results["model_type"] == "Classification":
-                            y_sample = model_results["model"].predict(X_sample)
-                        else:
-                            y_sample = model_results["model"].predict(X_sample)
-                        signature = infer_signature(
-                            model_input=X_sample, model_output=y_sample
-                        )
-                        # Dynamically discover what types are in the model
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".skops", delete=False
-                        ) as tmp:
-                            tmp_path = tmp.name
-                        sio.dump(model_results["model"], tmp_path)
-                        trusted_types = sio.get_untrusted_types(file=tmp_path)
-                        os.unlink(tmp_path)
-                        model_info = mlflow.sklearn.log_model(
-                            sk_model=model_results["model"],
-                            artifact_path="model",
-                            # registered_model_name=func_kwargs["model_registry_name"],
-                            signature=signature,
-                            input_example=X_sample,
-                            skops_trusted_types=trusted_types,  # auto-detected, works for any model
-                        )
-                        model_reg_info = mlflow.register_model(
-                            model_uri=model_info.model_uri,
-                            name=func_kwargs["model_registry_name"],
-                        )
-                        model_registered_version = model_reg_info.version
-                        logger.info(
-                            f"Registered model: {model_reg_info.name} with version: {model_registered_version}"
-                        )
-                        MlflowClient().set_registered_model_alias(
-                            name=func_kwargs["model_registry_name"],
-                            alias="challenger",
-                            version=model_registered_version,
-                        )
-                        logger.info(
-                            f"Set @challenger alias on {model_reg_info.name} v{model_registered_version}"
+                    elif action_name == "model_training":
+                        model_registered_version = _handle_model_training(
+                            ctx, cls, func_conf, func_kwargs
                         )
 
-                        # Log scaler artifact
-                        scaler_path = artifacts_dir / "scaler.pkl"
-                        joblib.dump(model_results["scaler"], scaler_path)
-                        mlflow.log_artifact(
-                            local_path=scaler_path, artifact_path="model/scaler"
-                        )
-                        mlflow.log_param(key="scalar", value=scaler_path)
-
-                        # Identify the feature pkl files in the directory
-                        features_base_path = base_output_dir / "data" / "featurization"
-                        feature_files = sorted(
-                            features_base_path.rglob("*_features.pkl")
-                        )
-
-                        if feature_files:
-                            feature_files_relative = [
-                                str(path.relative_to(base_output_dir))
-                                for path in feature_files
-                            ]
-                            logger.info(
-                                f"Found feature files in {features_base_path}: {feature_files_relative}"
-                            )
-                            # Log feature pipelines metadata
-                            features_metadata = {}
-                            for i, feature_file in enumerate(feature_files):
-                                dataset_name = feature_file.stem.replace(
-                                    "_features", ""
-                                )
-                                p_path = feature_file.relative_to(
-                                    base_output_dir
-                                ).as_posix()
-                                features_metadata[dataset_name] = p_path
-                            mlflow.log_param(
-                                key="feature_pipelines",
-                                value=json.dumps(features_metadata),
-                            )
-
-                            # Log feature pipelines artifacts together
-                            for feature_file in feature_files:
-                                mlflow.log_artifact(
-                                    local_path=str(feature_file),
-                                    artifact_path="model/featurization/",
-                                )
-                        else:
-                            logger.warning(
-                                f"No *_features.pkl files found in {features_base_path}"
-                            )
-
-                        # Model explainability
-                        if func_kwargs.get("include_model_explainability", False):
-                            logger.info("Generating model explainability plots...")
-                            model_explain(
-                                model=model_results["model"],
-                                train_data=model_results["X_train"],
-                                test_data=model_results["X_test"],
-                                file_name=str(artifacts_dir / "feature_importance.png"),
-                                file_name1=str(
-                                    artifacts_dir / "global_feature_importance.png"
-                                ),
-                                file_name2=str(
-                                    artifacts_dir / "local_feature_importance.png"
-                                ),
-                                file_name3=str(
-                                    artifacts_dir / "individual_explainability.png"
-                                ),
-                            )
-                            mlflow.log_artifact(
-                                local_path=artifacts_dir / "feature_importance.png",
-                                artifact_path="model/explainability/",
-                            )
-                            mlflow.log_artifact(
-                                local_path=artifacts_dir
-                                / "global_feature_importance.png",
-                                artifact_path="model/explainability/",
-                            )
-                            mlflow.log_artifact(
-                                local_path=artifacts_dir
-                                / "local_feature_importance.png",
-                                artifact_path="model/explainability/",
-                            )
-                            mlflow.log_artifact(
-                                local_path=artifacts_dir
-                                / "individual_explainability.png",
-                                artifact_path="model/explainability/",
-                            )
-
-                    if action_name == "log_experiment_details":
+                    elif action_name == "log_experiment_details":
                         cls(
                             spark=spark,
                             experiment_id=experiment_id,
@@ -576,7 +499,6 @@ def main(spark):
                     duration_minutes = round(
                         (end_time - start_time).total_seconds() / 60, 2
                     )
-
                     mlflow.log_metric("duration_minutes", duration_minutes)
                     mlflow.set_tag("run_status", run_status)
 
