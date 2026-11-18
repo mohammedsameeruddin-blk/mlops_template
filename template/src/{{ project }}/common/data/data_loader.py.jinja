@@ -10,8 +10,14 @@ def data_helper(spark, config):
         df_table = spark.sql(f"SELECT * FROM {table_name}")
         logger.info(f"Table read successfully - `{table_name}`.")
         flag = True
+    elif source_type == "file":
+        file_info = config.get("inputs")["file"]
+        file_path = file_info["data"]
+        df_table = spark.read.format("csv").option("header", "true").load(file_path)
+        logger.info(f"File read successfully - `{file_path}`.")
+        flag = True
     else:
-        message = "Supports only `databricks_table` as of now."
+        message = "Supports only `databricks_table` and `file` as of now."
         logger.error(message)
         raise ValueError(message)
 
